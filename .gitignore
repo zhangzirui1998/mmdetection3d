@@ -118,6 +118,7 @@ work_dirs/
 exps/
 show_dir/
 checkpoints/
+wandb/
 *~
 mmdet3d/.mim
 
