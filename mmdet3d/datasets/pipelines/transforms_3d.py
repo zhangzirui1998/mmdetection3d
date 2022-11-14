@@ -72,17 +72,17 @@ class RandomFlip3D(RandomFlip):
 
     If the input dict contains the key "flip", then the flag will be used,
     otherwise it will be randomly decided by a ratio specified in the init
-    method.
+    method.(如果不输入flip，则按照初始化方法，随机决定翻转率)
 
     Args:
         sync_2d (bool, optional): Whether to apply flip according to the 2D
             images. If True, it will apply the same flip as that to 2D images.
             If False, it will decide whether to flip randomly and independently
-            to that of 2D images. Defaults to True.
+            to that of 2D images. Defaults to True.(图像是否和点云一起翻转)
         flip_ratio_bev_horizontal (float, optional): The flipping probability
-            in horizontal direction. Defaults to 0.0.
+            in horizontal direction. Defaults to 0.0.（水平方向翻转概率）
         flip_ratio_bev_vertical (float, optional): The flipping probability
-            in vertical direction. Defaults to 0.0.
+            in vertical direction. Defaults to 0.0.（垂直方向翻转概率）
     """
 
     def __init__(self,
@@ -91,23 +91,26 @@ class RandomFlip3D(RandomFlip):
                  flip_ratio_bev_vertical=0.0,
                  **kwargs):
         super(RandomFlip3D, self).__init__(
-            flip_ratio=flip_ratio_bev_horizontal, **kwargs)
-        self.sync_2d = sync_2d
-        self.flip_ratio_bev_vertical = flip_ratio_bev_vertical
+            flip_ratio=flip_ratio_bev_horizontal, **kwargs)  # 在父类中flip_ratio默认是水平翻转
+        self.sync_2d = sync_2d  # 图像和点云一起翻转
+        self.flip_ratio_bev_vertical = flip_ratio_bev_vertical  # 垂直翻转率0
         if flip_ratio_bev_horizontal is not None:
             assert isinstance(
-                flip_ratio_bev_horizontal,
-                (int, float)) and 0 <= flip_ratio_bev_horizontal <= 1
+                flip_ratio_bev_horizontal,  # isinstance(value,type) 判断value是否符合type类型，返回值bool
+                (int, float)) and 0 <= flip_ratio_bev_horizontal <= 1  # 判断输入是否正确，及时报错
         if flip_ratio_bev_vertical is not None:
             assert isinstance(
                 flip_ratio_bev_vertical,
-                (int, float)) and 0 <= flip_ratio_bev_vertical <= 1
+                (int, float)) and 0 <= flip_ratio_bev_vertical <= 1  # 判断输入是否正确，及时报错
 
     def random_flip_data_3d(self, input_dict, direction='horizontal'):
         """Flip 3D data randomly.
 
         Args:
             input_dict (dict): Result dict from loading pipeline.
+                input_dict数据由GlobalRotScaleTrans流入，
+                包括{points、gt_bboxes_3d, gt_labels_3d, gt_bboxes, gt_labels, pts_instance_mask, pts_semantic_mask,
+                bbox3d_fields, pts_mask_fields, pts_seg_fields、pcd_trans, pcd_rotation, pcd_scale_factor}
             direction (str, optional): Flip direction.
                 Default: 'horizontal'.
 
@@ -115,13 +118,14 @@ class RandomFlip3D(RandomFlip):
             dict: Flipped results, 'points', 'bbox3d_fields' keys are
                 updated in the result dict.
         """
-        assert direction in ['horizontal', 'vertical']
+        assert direction in ['horizontal', 'vertical']  # 判断direction的内容是否正常
         # for semantic segmentation task, only points will be flipped.
         if 'bbox3d_fields' not in input_dict:
-            input_dict['points'].flip(direction)
+            input_dict['points'].flip(direction)  # 输入没有bbox3d_fields，则只翻转points
             return
+        # key bbox3d_fields 的 value 是一个长度为1或0的列表
         if len(input_dict['bbox3d_fields']) == 0:  # test mode
-            input_dict['bbox3d_fields'].append('empty_box3d')
+            input_dict['bbox3d_fields'].append('empty_box3d')  # 将列表添加字符串'empty_box3d'
             input_dict['empty_box3d'] = input_dict['box_type_3d'](
                 np.array([], dtype=np.float32))
         assert len(input_dict['bbox3d_fields']) == 1

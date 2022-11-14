@@ -357,7 +357,7 @@ class Custom3DSegDataset(Dataset):
             logger=logger)
 
         if show:
-            self.show(results, out_dir, pipeline=pipeline)
+            self.show(pred_sem_masks, out_dir, pipeline=pipeline)
 
         return ret_dict
 

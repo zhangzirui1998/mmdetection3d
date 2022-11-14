@@ -13,8 +13,8 @@ class PointPillarsScatter(nn.Module):
     Converts learned features from dense tensor to sparse pseudo image.
 
     Args:
-        in_channels (int): Channels of input features.
-        output_shape (list[int]): Required output shape of features.
+        in_channels (int): Channels of input features.  64
+        output_shape (list[int]): Required output shape of features.  [496*432]
     """
 
     def __init__(self, in_channels, output_shape):
@@ -39,24 +39,25 @@ class PointPillarsScatter(nn.Module):
         """Scatter features of single sample.
 
         Args:
-            voxel_features (torch.Tensor): Voxel features in shape (N, C).
-            coors (torch.Tensor): Coordinates of each voxel.
-                The first column indicates the sample ID.
+            voxel_features (torch.Tensor): Voxel features in shape (N, C). [16000,64]
+            coors (torch.Tensor): Coordinates of each voxel.体素自身坐标，16000x4，[batch_id, z, y, x]
+                The first column indicates the sample ID.第一列表示样本ID
         """
-        # Create the canvas for this sample
+        # Create the canvas for this sample 建立多通道伪图像：通道数=in_channels,img_size=nx*ny=output_shape
         canvas = torch.zeros(
-            self.in_channels,
-            self.nx * self.ny,
+            self.in_channels,  # 64
+            self.nx * self.ny,  # 496*432=214272
             dtype=voxel_features.dtype,
-            device=voxel_features.device)
+            device=voxel_features.device)  # [64,214272]
 
-        indices = coors[:, 2] * self.nx + coors[:, 3]
-        indices = indices.long()
-        voxels = voxel_features.t()
+        # 创建索引 nx*ny
+        indices = coors[:, 2] * self.nx + coors[:, 3]  # coors[:, 2]:vy  coors[:, 3]:vx  indices=tensor(一维)
+        indices = indices.long()  # 转换成长整形
+        voxels = voxel_features.t()  # 将矩阵转置 [64,16000]
         # Now scatter the blob back to the canvas.
-        canvas[:, indices] = voxels
+        canvas[:, indices] = voxels  # 将原本的voxels特征升维，变为图像大小的维度nx*ny [64,496*432]
         # Undo the column stacking to final 4-dim tensor
-        canvas = canvas.view(1, self.in_channels, self.ny, self.nx)
+        canvas = canvas.view(1, self.in_channels, self.ny, self.nx)  # 建立伪图像[1,64,432,496]
         return canvas
 
     def forward_batch(self, voxel_features, coors, batch_size):

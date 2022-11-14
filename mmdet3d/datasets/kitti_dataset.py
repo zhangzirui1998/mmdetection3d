@@ -49,7 +49,7 @@ class KittiDataset(Custom3DDataset):
         test_mode (bool, optional): Whether the dataset is in test mode.
             Defaults to False.
         pcd_limit_range (list, optional): The range of point cloud used to
-            filter invalid predicted boxes.
+            filter invalid predicted boxes.（用于过滤无效点云）
             Default: [0, -40, -3, 70.4, 40, 0.0].
     """
     CLASSES = ('car', 'pedestrian', 'cyclist')

@@ -24,8 +24,8 @@ class SECONDFPN(BaseModule):
     """
 
     def __init__(self,
-                 in_channels=[128, 128, 256],
-                 out_channels=[256, 256, 256],
+                 in_channels=[128, 128, 256],  # pp in_channels=[64, 128, 256]
+                 out_channels=[256, 256, 256],  # pp out_channels=[128, 128, 128]
                  upsample_strides=[1, 2, 4],
                  norm_cfg=dict(type='BN', eps=1e-3, momentum=0.01),
                  upsample_cfg=dict(type='deconv', bias=False),
@@ -40,16 +40,17 @@ class SECONDFPN(BaseModule):
         self.out_channels = out_channels
         self.fp16_enabled = False
 
-        deblocks = []
-        for i, out_channel in enumerate(out_channels):
-            stride = upsample_strides[i]
+        deblocks = []  # 反卷积块
+        for i, out_channel in enumerate(out_channels):  # 128,128,128
+            stride = upsample_strides[i]  # 1,2,4
             if stride > 1 or (stride == 1 and not use_conv_for_no_stride):
+                # 构建上采样层
                 upsample_layer = build_upsample_layer(
                     upsample_cfg,
-                    in_channels=in_channels[i],
-                    out_channels=out_channel,
-                    kernel_size=upsample_strides[i],
-                    stride=upsample_strides[i])
+                    in_channels=in_channels[i],  # 64，128，256
+                    out_channels=out_channel,  # 128，128，128
+                    kernel_size=upsample_strides[i],  # 1，2，4
+                    stride=upsample_strides[i])  # 1，2，4
             else:
                 stride = np.round(1 / stride).astype(np.int64)
                 upsample_layer = build_conv_layer(
@@ -59,10 +60,13 @@ class SECONDFPN(BaseModule):
                     kernel_size=stride,
                     stride=stride)
 
+            # deblock:Sequential
             deblock = nn.Sequential(upsample_layer,
                                     build_norm_layer(norm_cfg, out_channel)[1],
                                     nn.ReLU(inplace=True))
+            # deblocks:list
             deblocks.append(deblock)
+        # self.deblocks:ModuleList
         self.deblocks = nn.ModuleList(deblocks)
 
         if init_cfg is None:
@@ -79,13 +83,13 @@ class SECONDFPN(BaseModule):
             x (torch.Tensor): 4D Tensor in (N, C, H, W) shape.
 
         Returns:
-            list[torch.Tensor]: Multi-level feature maps.
+            list[torch.Tensor]: Multi-level feature maps.多个同一大小特征图
         """
-        assert len(x) == len(self.in_channels)
-        ups = [deblock(x[i]) for i, deblock in enumerate(self.deblocks)]
+        assert len(x) == len(self.in_channels)  # len(tensor)返回Tensor的第0维长度 3
+        ups = [deblock(x[i]) for i, deblock in enumerate(self.deblocks)]  # 3
 
         if len(ups) > 1:
-            out = torch.cat(ups, dim=1)
+            out = torch.cat(ups, dim=1)  # dim1=channel  融合特征图
         else:
-            out = ups[0]
+            out = ups[0]  # ups[0]=N
         return [out]

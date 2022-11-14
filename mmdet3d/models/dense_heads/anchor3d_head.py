@@ -86,11 +86,11 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
             'incorporated into box coder in the future')
         self.fp16_enabled = False
 
-        # build anchor generator
+        # build anchor generator 创建先验框
         self.anchor_generator = build_prior_generator(anchor_generator)
         # In 3D detection, the anchor stride is connected with anchor size
         self.num_anchors = self.anchor_generator.num_base_anchors
-        # build box coder
+        # build box coder 构建框编码器
         self.bbox_coder = build_bbox_coder(bbox_coder)
         self.box_code_size = self.bbox_coder.code_size
 

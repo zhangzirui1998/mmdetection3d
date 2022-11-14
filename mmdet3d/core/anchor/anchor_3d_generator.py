@@ -283,28 +283,29 @@ class AlignedAnchor3DRangeGenerator(Anchor3DRangeGenerator):
                 [*feature_size, num_sizes, num_rots, 7].
         """
         if len(feature_size) == 2:
-            feature_size = [1, feature_size[0], feature_size[1]]
+            feature_size = [1, feature_size[0], feature_size[1]]  # z,y,x
         anchor_range = torch.tensor(anchor_range, device=device)  # 将数据放入tensor中,这里anchor_range是一维张量
         z_centers = torch.linspace(
-            anchor_range[2],
-            anchor_range[5],
-            feature_size[0] + 1,
+            anchor_range[2],  # z_min
+            anchor_range[5],  # z_max
+            feature_size[0] + 1,  # z+1
             device=device)
         y_centers = torch.linspace(
-            anchor_range[1],
-            anchor_range[4],
-            feature_size[1] + 1,
+            anchor_range[1],  # y_min
+            anchor_range[4],  # y_max
+            feature_size[1] + 1,  # y+1
             device=device)
         x_centers = torch.linspace(
-            anchor_range[0],
-            anchor_range[3],
-            feature_size[2] + 1,
+            anchor_range[0],  # x_min
+            anchor_range[3],  # x_max
+            feature_size[2] + 1,  # x+1
             device=device)
-        sizes = torch.tensor(sizes, device=device).reshape(-1, 3) * scale
+        # 此处用reshape的原因是sizes本身可能传进来不是标准数据，在这里作统一格式
+        sizes = torch.tensor(sizes, device=device).reshape(-1, 3) * scale  # .reshape(-1,3)变成3*3tensor，-1在第一个位置表示在第一维上reshape
         rotations = torch.tensor(rotations, device=device)
 
         # shift the anchor center
-        if not self.align_corner:
+        if not self.align_corner:  # default self.align_corner=False
             z_shift = (z_centers[1] - z_centers[0]) / 2
             y_shift = (y_centers[1] - y_centers[0]) / 2
             x_shift = (x_centers[1] - x_centers[0]) / 2
