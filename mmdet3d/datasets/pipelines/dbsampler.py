@@ -1,5 +1,4 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-# 目标点云采样
 import copy
 import os
 import warnings
@@ -14,14 +13,13 @@ from ..builder import OBJECTSAMPLERS, PIPELINES
 
 class BatchSampler:
     """Class for sampling specific category of ground truths.
-        采样指定类别的真实框
 
     Args:
-        sample_list (list[dict]): List of samples.采样列表
-        name (str, optional): The category of samples. Default: None.采样目标类别名称
-        epoch (int, optional): Sampling epoch. Default: None.采样轮数
-        shuffle (bool, optional): Whether to shuffle indices. Default: False.是否重新随机排序索引
-        drop_reminder (bool, optional): Drop reminder. Default: False.删除提醒
+        sample_list (list[dict]): List of samples.
+        name (str, optional): The category of samples. Default: None.
+        epoch (int, optional): Sampling epoch. Default: None.
+        shuffle (bool, optional): Whether to shuffle indices. Default: False.
+        drop_reminder (bool, optional): Drop reminder. Default: False.
     """
 
     def __init__(self,
@@ -31,27 +29,25 @@ class BatchSampler:
                  shuffle=True,
                  drop_reminder=False):
         self._sampled_list = sampled_list
-        self._indices = np.arange(len(sampled_list))  # 输出一个采样列表长度的数组，赋值给索引 (self._indices = [0 1 2 3 ...])
-        # 判断是否需要重新随机排序索引
+        self._indices = np.arange(len(sampled_list))
         if shuffle:
-            np.random.shuffle(self._indices)  # 将数组内数字随机重新排序，返回值是数组
-        self._idx = 0  # 初始索引值
-        self._example_num = len(sampled_list)  # 样例数量
+            np.random.shuffle(self._indices)
+        self._idx = 0
+        self._example_num = len(sampled_list)
         self._name = name
-        self._shuffle = shuffle  # self._shuffle = True
+        self._shuffle = shuffle
         self._epoch = epoch
-        self._epoch_counter = 0  # 计数
+        self._epoch_counter = 0
         self._drop_reminder = drop_reminder
 
     def _sample(self, num):
         """Sample specific number of ground truths and return indices.
-            采样特定数量真实框并返回索引
 
         Args:
-            num (int): Sampled number.输入参数：采样数量
+            num (int): Sampled number.
 
         Returns:
-            list[int]: Indices of sampled ground truths.返回值：采样真实框索引
+            list[int]: Indices of sampled ground truths.
         """
         if self._idx + num >= self._example_num:
             ret = self._indices[self._idx:].copy()
@@ -63,9 +59,9 @@ class BatchSampler:
 
     def _reset(self):
         """Reset the index of batchsampler to zero."""
-        assert self._name is not None  # assert可以理解为if  判断变量是否为空，若为空则中断程序
+        assert self._name is not None
         # print("reset", self._name)
-        if self._shuffle:  # self._shuffle = True
+        if self._shuffle:
             np.random.shuffle(self._indices)
         self._idx = 0
 

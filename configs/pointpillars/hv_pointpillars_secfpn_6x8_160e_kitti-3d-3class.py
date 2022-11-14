@@ -7,7 +7,7 @@ _base_ = [
 
 point_cloud_range = [0, -39.68, -3, 69.12, 39.68, 1]
 # dataset settings
-data_root = 'data/kitti/'  # 数据集根目录
+data_root = '/root/autodl-tmp/kitti/'  # 数据集根目录
 class_names = ['Pedestrian', 'Cyclist', 'Car']  # 类别名称
 # PointPillars adopted a different sampling strategies among classes pp在不同类别中采用不同的采样策略
 
@@ -114,4 +114,4 @@ optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 runner = dict(type='EpochBasedRunner', max_epochs=10)
 
 # Use evaluation interval=2 reduce the number of evaluation timese
-evaluation = dict(interval=2)
+evaluation = dict(interval=5)

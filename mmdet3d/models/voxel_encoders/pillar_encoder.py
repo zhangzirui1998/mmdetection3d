@@ -49,7 +49,7 @@ class PillarFeatureNet(nn.Module):
                  mode='max',
                  legacy=True):
         super(PillarFeatureNet, self).__init__()
-        assert len(feat_channels) > 0  # feat_channels=[64] from pp
+        assert len(feat_channels) > 0
         self.legacy = legacy
         if with_cluster_center:
             in_channels += 3
@@ -62,26 +62,26 @@ class PillarFeatureNet(nn.Module):
         self._with_voxel_center = with_voxel_center
         self.fp16_enabled = False
         # Create PillarFeatureNet layers
-        self.in_channels = in_channels  # 10
-        feat_channels = [in_channels] + list(feat_channels)  # [10,64]
+        self.in_channels = in_channels
+        feat_channels = [in_channels] + list(feat_channels)
         pfn_layers = []
         for i in range(len(feat_channels) - 1):
-            in_filters = feat_channels[i]  # 10
-            out_filters = feat_channels[i + 1]  # 64
-            if i < len(feat_channels) - 2:  # False
+            in_filters = feat_channels[i]
+            out_filters = feat_channels[i + 1]
+            if i < len(feat_channels) - 2:
                 last_layer = False
             else:
                 last_layer = True
             pfn_layers.append(
                 PFNLayer(
-                    in_filters,  # 10
-                    out_filters,  # 64
+                    in_filters,
+                    out_filters,
                     norm_cfg=norm_cfg,
                     last_layer=last_layer,
                     mode=mode))
-        self.pfn_layers = nn.ModuleList(pfn_layers)  # fpn层加入模块中
+        self.pfn_layers = nn.ModuleList(pfn_layers)
 
-        # Need pillar (voxel) size and x/y offset in order to calculate offset  计算体素中点的偏移量
+        # Need pillar (voxel) size and x/y offset in order to calculate offset
         self.vx = voxel_size[0]
         self.vy = voxel_size[1]
         self.vz = voxel_size[2]
@@ -98,22 +98,22 @@ class PillarFeatureNet(nn.Module):
             features (torch.Tensor): Point features or raw points in shape
                 (N, M, C).
             num_points (torch.Tensor): Number of points in each pillar.
-            coors (torch.Tensor): Coordinates of each voxel.体素自身坐标，16000x4，[batch_id, x, y, z]
+            coors (torch.Tensor): Coordinates of each voxel.
 
         Returns:
             torch.Tensor: Features of pillars.
         """
-        features_ls = [features]  # 创建特征列表，后续将voxel中point位置特征传入列表中
+        features_ls = [features]
         # Find distance of x, y, and z from cluster center
         if self._with_cluster_center:
             points_mean = features[:, :, :3].sum(
                 dim=1, keepdim=True) / num_points.type_as(features).view(
                     -1, 1, 1)
             f_cluster = features[:, :, :3] - points_mean
-            features_ls.append(f_cluster)  # 加入偏移聚类中心特征
+            features_ls.append(f_cluster)
 
         # Find distance of x, y, and z from pillar center
-        dtype = features.dtype  # torch.float32
+        dtype = features.dtype
         if self._with_voxel_center:
             if not self.legacy:
                 f_center = torch.zeros_like(features[:, :, :3])
@@ -137,25 +137,25 @@ class PillarFeatureNet(nn.Module):
                 f_center[:, :, 2] = f_center[:, :, 2] - (
                     coors[:, 1].type_as(features).unsqueeze(1) * self.vz +
                     self.z_offset)
-            features_ls.append(f_center)  # 加入偏移几何中心特征
+            features_ls.append(f_center)
 
-        if self._with_distance:  # default False
+        if self._with_distance:
             points_dist = torch.norm(features[:, :, :3], 2, 2, keepdim=True)
             features_ls.append(points_dist)
 
         # Combine together feature decorations
-        features = torch.cat(features_ls, dim=-1)  # concat特征 10
+        features = torch.cat(features_ls, dim=-1)
         # The feature decorations were calculated without regard to whether
         # pillar was empty. Need to ensure that
-        # empty pillars remain set to zeros.需要将空柱子中加入零点
+        # empty pillars remain set to zeros.
         voxel_count = features.shape[1]
         mask = get_paddings_indicator(num_points, voxel_count, axis=0)
         mask = torch.unsqueeze(mask, -1).type_as(features)
         features *= mask
 
         for pfn in self.pfn_layers:
-            features = pfn(features, num_points)  # 将特征放入FPN中提取并maxpooling，channels: in10 out64
-                                                  # 32*10->32*64->1*64
+            features = pfn(features, num_points)
+
         return features.squeeze(1)
 
 
