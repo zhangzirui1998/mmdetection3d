@@ -32,7 +32,7 @@ except ImportError:
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a detector')
-    parser.add_argument('config', default='', help='train config file path')
+    parser.add_argument('config', default='', help='train config file path')  # 训练配置文件地址
     parser.add_argument('--work-dir', help='the dir to save logs and models')
     parser.add_argument(
         '--resume-from', help='the checkpoint file to resume from')
@@ -72,15 +72,15 @@ def parse_args():
         action='store_true',
         help='whether to set deterministic options for CUDNN backend.')
     parser.add_argument(
-        '--options',
-        nargs='+',
+        '--options',  # 用键值对的形式修改配置文件
+        nargs='+',  # 表示参数可以设一个或多个
         action=DictAction,
         help='override some settings in the used config, the key-value pair '
         'in xxx=yyy format will be merged into config file (deprecate), '
         'change to --cfg-options instead.')
     parser.add_argument(
-        '--cfg-options',
-        nargs='+',
+        '--cfg-options',  # 用键值对的形式修改配置文件，其中值可以是list或嵌套的list/tuple
+        nargs='+',  # 表示参数可以设一个或多个
         action=DictAction,
         help='override some settings in the used config, the key-value pair '
         'in xxx=yyy format will be merged into config file. If the value to '
@@ -114,27 +114,31 @@ def parse_args():
 
 
 def main():
-    args = parse_args()
+    args = parse_args()  # 加载参数
 
-    cfg = Config.fromfile(args.config)
+    cfg = Config.fromfile(args.config)  # 加载训练配置文件  args.config是path
     if args.cfg_options is not None:
-        cfg.merge_from_dict(args.cfg_options)
+        cfg.merge_from_dict(args.cfg_options)  # 在训练终端窗口传入的新配置参数
 
     # set multi-process settings
     setup_multi_processes(cfg)
 
     # set cudnn_benchmark
-    if cfg.get('cudnn_benchmark', False):
+    if cfg.get('cudnn_benchmark', False):  #  get() 函数返回指定键的值，如果键不在字典中返回默认值
         torch.backends.cudnn.benchmark = True
 
-    # work_dir is determined in this priority: CLI > segment in file > filename
+    # work_dir is determined in this priority: CLI > segment in file > filename,CLI：命令行界面
     if args.work_dir is not None:
         # update configs according to CLI args if args.work_dir is not None
-        cfg.work_dir = args.work_dir
-    elif cfg.get('work_dir', None) is None:
+        cfg.work_dir = args.work_dir  # 从终端传入的work_dir
+    elif cfg.get('work_dir', None) is None:  #  get() 函数返回指定键的值，如果键不在字典中返回默认值
         # use config filename as default work_dir if cfg.work_dir is None
+        # os.path.splitext(path) 分割路径，返回路径名和文件扩展名的元组
+        # os.path.basename(path)返回path最后的文件名
         cfg.work_dir = osp.join('./work_dirs',
-                                osp.splitext(osp.basename(args.config))[0])
+                                osp.splitext(osp.basename(args.config))[0],
+                                time.strftime('%Y-%m-%d %X', time.localtime()))  # work_dir文件夹绝对路径
+    # 断点续训
     if args.resume_from is not None:
         cfg.resume_from = args.resume_from
 
@@ -174,12 +178,12 @@ def main():
         cfg.gpu_ids = range(world_size)
 
     # create work_dir
-    mmcv.mkdir_or_exist(osp.abspath(cfg.work_dir))
+    mmcv.mkdir_or_exist(osp.abspath(cfg.work_dir))  # osp.abspath返回绝对路径，创建新的work_dir文件夹
     # dump config
     cfg.dump(osp.join(cfg.work_dir, osp.basename(args.config)))
     # init the logger before other steps
-    timestamp = time.strftime('%Y%m%d_%H%M%S', time.localtime())
-    log_file = osp.join(cfg.work_dir, f'{timestamp}.log')
+    timestamp = time.strftime('%Y-%m-%d %X', time.localtime())
+    log_file = osp.join(cfg.work_dir, f'{timestamp}.log')  # 创建日志文件
     # specify logger name, if we still use 'mmdet', the output info will be
     # filtered and won't be saved in the log_file
     # TODO: ugly workaround to judge whether we are training det or seg model
@@ -192,22 +196,23 @@ def main():
 
     # init the meta dict to record some important information such as
     # environment info and seed, which will be logged
-    meta = dict()
+    meta = dict()  # 重要日志字典
     # log env info
-    env_info_dict = collect_env()
-    env_info = '\n'.join([(f'{k}: {v}') for k, v in env_info_dict.items()])
-    dash_line = '-' * 60 + '\n'
+    env_info_dict = collect_env()  # 获取环境
+    env_info = '\n'.join([(f'{k}: {v}') for k, v in env_info_dict.items()])  # 环境字典
+    dash_line = '-' * 60 + '\n'  # 分隔线+换行 ------------------------------
+    # logger.info环境输出流
     logger.info('Environment info:\n' + dash_line + env_info + '\n' +
                 dash_line)
-    meta['env_info'] = env_info
-    meta['config'] = cfg.pretty_text
+    meta['env_info'] = env_info  # 环境字典作为value写入meta
+    meta['config'] = cfg.pretty_text  # 配置文件作为value写入meta
 
-    # log some basic info
-    logger.info(f'Distributed training: {distributed}')
-    logger.info(f'Config:\n{cfg.pretty_text}')
+    # log some basic info 输出重要配置
+    logger.info(f'Distributed training: {distributed}')  # 分布式训练
+    logger.info(f'Config:\n{cfg.pretty_text}')  # 配置文件内容
 
     # set random seeds
-    seed = init_random_seed(args.seed)
+    seed = init_random_seed(args.seed)  # 初始化随机种子
     seed = seed + dist.get_rank() if args.diff_seed else seed
     logger.info(f'Set random seed to {seed}, '
                 f'deterministic: {args.deterministic}')
@@ -216,16 +221,17 @@ def main():
     meta['seed'] = seed
     meta['exp_name'] = osp.basename(args.config)
 
+    # 创建模型
     model = build_model(
         cfg.model,
         train_cfg=cfg.get('train_cfg'),
         test_cfg=cfg.get('test_cfg'))
-    model.init_weights()
+    model.init_weights()  # 参数权重初始化
 
-    logger.info(f'Model:\n{model}')
-    datasets = [build_dataset(cfg.data.train)]
+    logger.info(f'Model:\n{model}')  # 输出模型信息（dict）
+    datasets = [build_dataset(cfg.data.train)]  # build训练配置和pipeline
     if len(cfg.workflow) == 2:
-        val_dataset = copy.deepcopy(cfg.data.val)
+        val_dataset = copy.deepcopy(cfg.data.val)  # 深拷贝一份训练时的验证配置
         # in case we use a dataset wrapper
         if 'dataset' in cfg.data.train:
             val_dataset.pipeline = cfg.data.train.dataset.pipeline
