@@ -27,7 +27,7 @@ class SECOND(BaseModule):
                  layer_nums=[3, 5, 5],
                  layer_strides=[2, 2, 2],
                  norm_cfg=dict(type='BN', eps=1e-3, momentum=0.01),
-                 conv_cfg=dict(type='Conv2d', bias=False),
+                 conv_cfg=dict(type='Conv2d', bias=False),  # 若在卷积或者神经网络计算后加了正则化项，则不需要bias，节省内存
                  init_cfg=None,  # 可能是权重初始化的意思
                  pretrained=None):
         super(SECOND, self).__init__(init_cfg=init_cfg)
