@@ -44,7 +44,7 @@ class VoxelNet(SingleStage3DDetector):
         batch_size = coors[-1, 0].item() + 1
         x = self.middle_encoder(voxel_features, coors, batch_size)
         x = self.backbone(x)
-        if self.with_neck:
+        if self.with_neck:  # 判断是否包含neck模块
             x = self.neck(x)
         return x
 
@@ -88,19 +88,22 @@ class VoxelNet(SingleStage3DDetector):
         Returns:
             dict: Losses of each branch.
         """
-        x = self.extract_feat(points, img_metas)
-        outs = self.bbox_head(x)
+        x = self.extract_feat(points, img_metas)  # 特征提取（voxelize->voxel encoder->middle encoder->backbone->neck）
+        outs = self.bbox_head(x)  # 检测头输出预测特征图
         loss_inputs = outs + (gt_bboxes_3d, gt_labels_3d, img_metas)
+        # 计算loss
         losses = self.bbox_head.loss(
-            *loss_inputs, gt_bboxes_ignore=gt_bboxes_ignore)
+            *loss_inputs, gt_bboxes_ignore=gt_bboxes_ignore)  # None
         return losses
 
     def simple_test(self, points, img_metas, imgs=None, rescale=False):
-        """Test function without augmentaiton."""
-        x = self.extract_feat(points, img_metas)
-        outs = self.bbox_head(x)
+        """Test function without augmentaiton.单尺度测试"""
+        x = self.extract_feat(points, img_metas)  # 特征提取（voxelize->voxel encoder->middle encoder->backbone->neck）
+        outs = self.bbox_head(x)  # 检测头输出预测特征图
+        # bbox解码和还原
         bbox_list = self.bbox_head.get_bboxes(
             *outs, img_metas, rescale=rescale)
+        # 重组结果返回
         bbox_results = [
             bbox3d2result(bboxes, scores, labels)
             for bboxes, scores, labels in bbox_list
@@ -108,7 +111,7 @@ class VoxelNet(SingleStage3DDetector):
         return bbox_results
 
     def aug_test(self, points, img_metas, imgs=None, rescale=False):
-        """Test function with augmentaiton."""
+        """Test function with augmentaiton.多尺度测试"""
         feats = self.extract_feats(points, img_metas)
 
         # only support aug_test for one sample
