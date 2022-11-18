@@ -10,6 +10,7 @@ from os import path as osp
 import mmcv
 import torch
 import torch.distributed as dist
+# Config 用于读取配置文件, DictAction 将命令行字典类型参数转化为 key-value 形式
 from mmcv import Config, DictAction
 from mmcv.runner import get_dist_info, init_dist
 
@@ -36,6 +37,8 @@ def parse_args():
     parser.add_argument('--work-dir', help='the dir to save logs and models')
     parser.add_argument(
         '--resume-from', help='the checkpoint file to resume from')
+    # action: store (默认, 表示保存参数)
+    # action: store_true, store_false (如果指定参数, 则为 True, False)
     parser.add_argument(
         '--auto-resume',
         action='store_true',
@@ -44,12 +47,19 @@ def parse_args():
         '--no-validate',
         action='store_true',
         help='whether not to evaluate the checkpoint during training')
+
+    # -------------创建一个互斥组. argparse 将会确保互斥组中的参数只能出现一个--------------
     group_gpus = parser.add_mutually_exclusive_group()
     group_gpus.add_argument(
         '--gpus',
         type=int,
         help='(Deprecated, please use --gpu-id) number of gpus to use '
         '(only applicable to non-distributed training)')
+    # 可以使用 python train.py --gpu-ids 0 1 2 3 指定使用的 GPU id
+    # 参数结果：[0, 1, 2, 3]
+    # nargs = '*'：参数个数可以设置0个或n个
+    # nargs = '+'：参数个数可以设置1个或n个
+    # nargs = '?'：参数个数可以设置0个或1个
     group_gpus.add_argument(
         '--gpu-ids',
         type=int,
@@ -62,6 +72,8 @@ def parse_args():
         default=0,
         help='number of gpus to use '
         '(only applicable to non-distributed training)')
+    # ---------------------------------------------------------------------------
+
     parser.add_argument('--seed', type=int, default=0, help='random seed')
     parser.add_argument(
         '--diff-seed',
@@ -71,6 +83,8 @@ def parse_args():
         '--deterministic',
         action='store_true',
         help='whether to set deterministic options for CUDNN backend.')
+    # 其他参数: 可以使用 --options a=1,2,3 指定其他参数
+    # 参数结果: {'a': [1, 2, 3]}
     parser.add_argument(
         '--options',  # 用键值对的形式修改配置文件
         nargs='+',  # 表示参数可以设一个或多个
@@ -88,17 +102,21 @@ def parse_args():
         'It also allows nested list/tuple values, e.g. key="[(a,b),(c,d)]" '
         'Note that the quotation marks are necessary and that no white space '
         'is allowed.')
+    # 如果使用 dist_utils.sh 进行分布式训练, launcher 默认为 pytorch
     parser.add_argument(
         '--launcher',
         choices=['none', 'pytorch', 'slurm', 'mpi'],
         default='none',
         help='job launcher')
+    # 本地进程编号，此参数 torch.distributed.launch 会自动传入
     parser.add_argument('--local_rank', type=int, default=0)
+    # 根据gpu数量自动裁剪lr
     parser.add_argument(
         '--autoscale-lr',
         action='store_true',
         help='automatically scale lr with the number of gpus')
     args = parser.parse_args()
+    # 如果环境中没有 LOCAL_RANK，就设置它为当前的 local_rank
     if 'LOCAL_RANK' not in os.environ:
         os.environ['LOCAL_RANK'] = str(args.local_rank)
 
@@ -114,24 +132,30 @@ def parse_args():
 
 
 def main():
-    args = parse_args()  # 加载参数
-
-    cfg = Config.fromfile(args.config)  # 加载训练配置文件  args.config是path
+    # ------------------------------1.从命令行和配置文件获取配置参数----------------------------------
+    # 加载参数
+    args = parse_args()
+    # 加载训练配置文件  args.config是path
+    cfg = Config.fromfile(args.config)
+    # 在训练终端窗口读取传入的新配置参数
     if args.cfg_options is not None:
-        cfg.merge_from_dict(args.cfg_options)  # 在训练终端窗口传入的新配置参数
+        cfg.merge_from_dict(args.cfg_options)
 
     # set multi-process settings
     setup_multi_processes(cfg)
 
-    # set cudnn_benchmark
-    if cfg.get('cudnn_benchmark', False):  #  get() 函数返回指定键的值，如果键不在字典中返回默认值
+    # set cudnn_benchmark，设置True 可以加速输入大小固定的模型训练和推理
+    # 若cfg中有cudnn_benchmark则Ture，默认False
+    if cfg.get('cudnn_benchmark', False):  # get() 函数返回指定键的值，如果键不在字典中返回默认值
         torch.backends.cudnn.benchmark = True
 
     # work_dir is determined in this priority: CLI > segment in file > filename,CLI：命令行界面
+    # 从终端传入的work_dir
     if args.work_dir is not None:
         # update configs according to CLI args if args.work_dir is not None
-        cfg.work_dir = args.work_dir  # 从终端传入的work_dir
-    elif cfg.get('work_dir', None) is None:  #  get() 函数返回指定键的值，如果键不在字典中返回默认值
+        cfg.work_dir = args.work_dir
+    # 当cfg中 work_dir 为 None 时，使用 ./work_dir/配置文件名/时间 作为默认工作目录
+    elif cfg.get('work_dir', None) is None:  # get() 函数返回指定键的值，如果键不在字典中返回默认值
         # use config filename as default work_dir if cfg.work_dir is None
         # os.path.splitext(path) 分割路径，返回路径名和文件扩展名的元组
         # os.path.basename(path)返回path最后的文件名
@@ -150,7 +174,7 @@ def main():
                       'segmentation model')
 
     if args.gpus is not None:
-        cfg.gpu_ids = range(1)
+        cfg.gpu_ids = range(1)  # (0,1)
         warnings.warn('`--gpus` is deprecated because we only support '
                       'single GPU mode in non-distributed training. '
                       'Use `gpus=1` now.')
@@ -161,15 +185,20 @@ def main():
                       'non-distributed training. Use the first GPU '
                       'in `gpu_ids` now.')
     if args.gpus is None and args.gpu_ids is None:
-        cfg.gpu_ids = [args.gpu_id]
+        cfg.gpu_ids = [args.gpu_id]  # default=0
 
-    if args.autoscale_lr:
+    # 根据GPU数量自动缩放lr
+    if args.autoscale_lr:  # Ture
         # apply the linear scaling rule (https://arxiv.org/abs/1706.02677)
+        # 单卡lr = 总lr * gpu数量 / 8
+        # 不改变单卡batch_size时，总lr不需要根据gpu数量调整，下面的公式已经自动调整单卡lr
         cfg.optimizer['lr'] = cfg.optimizer['lr'] * len(cfg.gpu_ids) / 8
 
     # init distributed env first, since logger depends on the dist info.
+    # launcher 为 none，不启用分布式训练。不使用 dist_train.sh，default launcher=none
     if args.launcher == 'none':
         distributed = False
+    # launcher 不为 none，启用分布式训练。使用 dist_train.sh，会传 ‘pytorch’
     else:
         distributed = True
         init_dist(args.launcher, **cfg.dist_params)
@@ -179,9 +208,12 @@ def main():
 
     # create work_dir
     mmcv.mkdir_or_exist(osp.abspath(cfg.work_dir))  # osp.abspath返回绝对路径，创建新的work_dir文件夹
+
     # dump config
     cfg.dump(osp.join(cfg.work_dir, osp.basename(args.config)))
+
     # init the logger before other steps
+    # 获取时间并编码，作为文件名
     timestamp = time.strftime('%Y-%m-%d %X', time.localtime())
     log_file = osp.join(cfg.work_dir, f'{timestamp}.log')  # 创建日志文件
     # specify logger name, if we still use 'mmdet', the output info will be
@@ -196,7 +228,8 @@ def main():
 
     # init the meta dict to record some important information such as
     # environment info and seed, which will be logged
-    meta = dict()  # 重要日志字典
+    meta = dict()
+
     # log env info
     env_info_dict = collect_env()  # 获取环境
     env_info = '\n'.join([(f'{k}: {v}') for k, v in env_info_dict.items()])  # 环境字典
@@ -204,6 +237,7 @@ def main():
     # logger.info环境输出流
     logger.info('Environment info:\n' + dash_line + env_info + '\n' +
                 dash_line)
+
     meta['env_info'] = env_info  # 环境字典作为value写入meta
     meta['config'] = cfg.pretty_text  # 配置文件作为value写入meta
 
@@ -221,15 +255,18 @@ def main():
     meta['seed'] = seed
     meta['exp_name'] = osp.basename(args.config)
 
-    # 创建模型
+    # --------------------------------2.创建模型-----------------------------
     model = build_model(
         cfg.model,
         train_cfg=cfg.get('train_cfg'),
         test_cfg=cfg.get('test_cfg'))
     model.init_weights()  # 参数权重初始化
+    # 输出模型信息（dict）
+    logger.info(f'Model:\n{model}')
 
-    logger.info(f'Model:\n{model}')  # 输出模型信息（dict）
+    # --------------------3.构建数据集: 需要传入 cfg.data.train，表明是训练集----------------------
     datasets = [build_dataset(cfg.data.train)]  # build训练配置和pipeline
+
     if len(cfg.workflow) == 2:
         val_dataset = copy.deepcopy(cfg.data.val)  # 深拷贝一份训练时的验证配置
         # in case we use a dataset wrapper
@@ -255,6 +292,9 @@ def main():
             if hasattr(datasets[0], 'PALETTE') else None)
     # add an attribute for visualization convenience
     model.CLASSES = datasets[0].CLASSES
+
+
+    # -----------------------------4.将模型、数据、配置传入检测器训练--------------------------------
     train_model(
         model,
         datasets,
