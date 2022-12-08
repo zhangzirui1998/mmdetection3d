@@ -16,6 +16,7 @@ if platform.system() != 'Windows':
     resource.setrlimit(resource.RLIMIT_NOFILE, (soft_limit, hard_limit))
 
 OBJECTSAMPLERS = Registry('Object sampler')
+# 实例化一个注册类 DATASETS
 DATASETS = Registry('dataset')
 PIPELINES = Registry('pipeline')
 

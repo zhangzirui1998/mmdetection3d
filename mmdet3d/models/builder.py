@@ -13,6 +13,8 @@ from mmdet.models.builder import ROI_EXTRACTORS as MMDET_ROI_EXTRACTORS
 from mmdet.models.builder import SHARED_HEADS as MMDET_SHARED_HEADS
 from mmseg.models.builder import LOSSES as MMSEG_LOSSES
 
+# MODELS 为注册器的一个实例化对象
+# models 为该实例化对象在registry查询表中的名称
 MODELS = Registry('models', parent=MMCV_MODELS)
 
 BACKBONES = MODELS
@@ -79,7 +81,18 @@ def build_loss(cfg):
 
 
 def build_detector(cfg, train_cfg=None, test_cfg=None):
-    """Build detector."""
+    """
+        Build detector.
+
+        build(cfg, registry, default_args=None):
+            return build_from_cfg(cfg, registry, default_args)
+
+        build_detector 函数会调用 build 函数
+        build 函数调用 build_from_cfg 函数构建 registry 对象 (registry=detector)
+        (build_from_cfg 根据 cfg 字典构建 registry 对象)
+        其中 train_cfg 和 test_cfg 作为默认参数用于构建 registry 对象
+        (default_args=dict(train_cfg=train_cfg, test_cfg=test_cfg)
+    """
     if train_cfg is not None or test_cfg is not None:
         warnings.warn(
             'train_cfg and test_cfg is deprecated, '

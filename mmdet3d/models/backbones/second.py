@@ -90,6 +90,6 @@ class SECOND(BaseModule):
         outs = []
         for i in range(len(self.blocks)):  # len(self.blocks)=3
             # self.blocks是Modulelist要写forward，block是Sequential自带forward
-            x = self.blocks[i](x)  # 将参数x传入nn.module中进行计算
+            x = self.blocks[i](x)  # x:(2,64,496,432)->(2,64,248,216)->(2,128,124,108)->(2,256,62,54)
             outs.append(x)  # 输出是伪图像的特征
-        return tuple(outs)
+        return tuple(outs)  # outs=[(2,64,248,216),(2,128,124,108),(2,256,62,54)]

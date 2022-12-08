@@ -33,18 +33,26 @@ class VoxelNet(SingleStage3DDetector):
             test_cfg=test_cfg,
             init_cfg=init_cfg,
             pretrained=pretrained)
-        self.voxel_layer = Voxelization(**voxel_layer)
+        self.voxel_layer = Voxelization(**voxel_layer)  # class Voxelization做实例化
         self.voxel_encoder = builder.build_voxel_encoder(voxel_encoder)
         self.middle_encoder = builder.build_middle_encoder(middle_encoder)
 
     def extract_feat(self, points, img_metas=None):
-        """Extract features from points."""
+        """Extract features from points.
+            voxels:体素 dtype:tensor(v,n,c(3or4))，v是体素数量，n是体素内最大点数不足补零，c原始点坐标(x,y,z,r)
+            num_points:每个体素内非空(不为0)的点数 dtype:tensor(v)，v是体素数量 eg.tensor([32,32,15,2,14,32])
+            coors:体素的坐标 dtype:tensor(v,c(3or4))，v是体素数量，c为batch_id+补0+体素坐标 eg.tensor([0,0,5,4],[1,0,6,8])
+
+        """
+        # 将空间进行体素化，并记录每个体素中的点和体素坐标
         voxels, num_points, coors = self.voxelize(points)
+        # 对每个体素进行特征抽取，并降维
         voxel_features = self.voxel_encoder(voxels, num_points, coors)
         batch_size = coors[-1, 0].item() + 1
         x = self.middle_encoder(voxel_features, coors, batch_size)
         x = self.backbone(x)
-        if self.with_neck:  # 判断是否包含neck模块
+        # 判断是否包含neck模块
+        if self.with_neck:
             x = self.neck(x)
         return x
 
@@ -88,8 +96,10 @@ class VoxelNet(SingleStage3DDetector):
         Returns:
             dict: Losses of each branch.
         """
-        x = self.extract_feat(points, img_metas)  # 特征提取（voxelize->voxel encoder->middle encoder->backbone->neck）
-        outs = self.bbox_head(x)  # 检测头输出预测特征图
+        # 特征提取（voxelize->voxel encoder->middle encoder->backbone->neck）
+        x = self.extract_feat(points, img_metas)
+        # 检测头输出预测特征图
+        outs = self.bbox_head(x)
         loss_inputs = outs + (gt_bboxes_3d, gt_labels_3d, img_metas)
         # 计算loss
         losses = self.bbox_head.loss(
@@ -98,8 +108,10 @@ class VoxelNet(SingleStage3DDetector):
 
     def simple_test(self, points, img_metas, imgs=None, rescale=False):
         """Test function without augmentaiton.单尺度测试"""
-        x = self.extract_feat(points, img_metas)  # 特征提取（voxelize->voxel encoder->middle encoder->backbone->neck）
-        outs = self.bbox_head(x)  # 检测头输出预测特征图
+        # 特征提取（voxelize->voxel encoder->middle encoder->backbone->neck）
+        x = self.extract_feat(points, img_metas)
+        # 检测头输出预测特征图
+        outs = self.bbox_head(x)
         # bbox解码和还原
         bbox_list = self.bbox_head.get_bboxes(
             *outs, img_metas, rescale=rescale)

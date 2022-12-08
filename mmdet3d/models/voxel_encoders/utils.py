@@ -122,11 +122,11 @@ class PFNLayer(nn.Module):
     """
 
     def __init__(self,
-                 in_channels,
-                 out_channels,
-                 norm_cfg=dict(type='BN1d', eps=1e-3, momentum=0.01),
-                 last_layer=False,
-                 mode='max'):
+                 in_channels,  # 10
+                 out_channels,  # 64
+                 norm_cfg=dict(type='BN1d', eps=1e-3, momentum=0.01),  # {'type':'BN1d', 'eps':0.001, 'momentum':0.01}
+                 last_layer=False,  # True
+                 mode='max'):  # max
 
         super().__init__()
         self.fp16_enabled = False
@@ -134,9 +134,10 @@ class PFNLayer(nn.Module):
         self.last_vfe = last_layer
         if not self.last_vfe:
             out_channels = out_channels // 2
-        self.units = out_channels
-
+        self.units = out_channels  # 64
+        # BatchNorm1d(64, eps=0.001, momentum=0.01, affine=True, track_running_stats=True)
         self.norm = build_norm_layer(norm_cfg, self.units)[1]
+        # Linear(in_features=10, out_features=64, bias=False)
         self.linear = nn.Linear(in_channels, self.units, bias=False)
 
         assert mode in ['max', 'avg']

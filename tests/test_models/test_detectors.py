@@ -24,11 +24,13 @@ def _get_config_directory():
     """Find the predefined detector config directory."""
     try:
         # Assume we are running in the source mmdetection3d repo
+        # 根目录 /home/rui/mmdetection3d
         repo_dpath = dirname(dirname(dirname(__file__)))
     except NameError:
         # For IPython development when this __file__ is not defined
         import mmdet3d
         repo_dpath = dirname(dirname(mmdet3d.__file__))
+    # 配置文件根目录 /home/rui/mmdetection3d/configs
     config_dpath = join(repo_dpath, 'configs')
     if not exists(config_dpath):
         raise Exception('Cannot find config path')
@@ -38,19 +40,23 @@ def _get_config_directory():
 def _get_config_module(fname):
     """Load a configuration as a python module."""
     from mmcv import Config
+    # 配置文件根目录 /home/rui/mmdetection3d/configs
     config_dpath = _get_config_directory()
+    # config_file_path:'/home/rui/mmdetection3d/configs/dynamic_voxelization/dv_second_secfpn_6x8_80e_kitti-3d-car.py'
     config_fpath = join(config_dpath, fname)
+    # 配置文件解析 包括fname,prety_text
     config_mod = Config.fromfile(config_fpath)
     return config_mod
 
 
 def _get_model_cfg(fname):
+    # fname 配置文件名 eg.dv_second_secfpn_6x8_80e_kitti-3d-car.py
     """Grab configs necessary to create a model.
 
     These are deep copied to allow for safe modification of parameters without
     influencing other tests.
     """
-    config = _get_config_module(fname)
+    config = _get_config_module(fname)  # return config_mod
     model = copy.deepcopy(config.model)
 
     return model
@@ -78,13 +84,15 @@ def test_get_dynamic_voxelnet():
         pytest.skip('test requires GPU and torch+cuda')
 
     dynamic_voxelnet_cfg = _get_model_cfg(
-        'dynamic_voxelization/dv_second_secfpn_6x8_80e_kitti-3d-car.py')
+        'xmu_fusion/dv_pointpillars_secfpn_6x8_160e_kitti-3d-3class.py')
     self = build_detector(dynamic_voxelnet_cfg).cuda()
     points_0 = torch.rand([2010, 4], device='cuda')
     points_1 = torch.rand([2020, 4], device='cuda')
     points = [points_0, points_1]
     feats = self.extract_feat(points, None)
-    assert feats[0].shape == torch.Size([2, 512, 200, 176])
+    # voxel_size = [0.05, 0.05, 0.1] point_cloud_range = [0, -40, -3, 70.4, 40, 1] torch.Size([2, 512, 200, 176]
+    # voxel_size = [0.16, 0.16, 4] point_cloud_range = [0, -39.68, -3, 69.12, 39.68, 1] torch.Size([2, 384, 248, 216]
+    assert feats[0].shape == torch.Size([2, 384, 248, 216])
 
 
 def test_voxel_net():
@@ -92,7 +100,7 @@ def test_voxel_net():
         pytest.skip('test requires GPU and torch+cuda')
     _setup_seed(0)
     voxel_net_cfg = _get_detector_cfg(
-        'second/hv_second_secfpn_6x8_80e_kitti-3d-3class.py')
+        'xmu_fusion/hv_pointpillars_secfpn_6x8_160e_kitti-3d-3class.py')
 
     self = build_detector(voxel_net_cfg).cuda()
     points_0 = torch.rand([2010, 4], device='cuda')

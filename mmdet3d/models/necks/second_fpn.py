@@ -85,11 +85,12 @@ class SECONDFPN(BaseModule):
         Returns:
             list[torch.Tensor]: Multi-level feature maps.多个同一大小特征图
         """
-        assert len(x) == len(self.in_channels)  # len(tensor)返回Tensor的第0维长度 3
-        ups = [deblock(x[i]) for i, deblock in enumerate(self.deblocks)]  # 3
+        assert len(x) == len(self.in_channels)
+        # 反卷积上采样.将backbone输出的不同大小特征图上采样一样大
+        ups = [deblock(x[i]) for i, deblock in enumerate(self.deblocks)]  # [(2,128,248,216),(2,128,248,216),(2,128,248,216)]
 
-        if len(ups) > 1:
-            out = torch.cat(ups, dim=1)  # dim1=channel  融合特征图
+        if len(ups) > 1:  # 3
+            out = torch.cat(ups, dim=1)  # (2,384,248,216) 融合特征图
         else:
             out = ups[0]  # ups[0]=N
-        return [out]
+        return [out]  # [(2,384,248,216)]

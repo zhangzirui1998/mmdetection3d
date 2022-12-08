@@ -52,20 +52,20 @@ class PillarFeatureNet(nn.Module):
         assert len(feat_channels) > 0  # feat_channels=[64] from pp
         self.legacy = legacy
         if with_cluster_center:
-            in_channels += 3
+            in_channels += 3  # 7
         if with_voxel_center:
-            in_channels += 3
+            in_channels += 3  # 10
         if with_distance:
             in_channels += 1
-        self._with_distance = with_distance
-        self._with_cluster_center = with_cluster_center
-        self._with_voxel_center = with_voxel_center
+        self._with_distance = with_distance  # False
+        self._with_cluster_center = with_cluster_center  # True
+        self._with_voxel_center = with_voxel_center  # True
         self.fp16_enabled = False
         # Create PillarFeatureNet layers
         self.in_channels = in_channels  # 10
         feat_channels = [in_channels] + list(feat_channels)  # [10,64]
         pfn_layers = []
-        for i in range(len(feat_channels) - 1):
+        for i in range(len(feat_channels) - 1):  # i=0,pfn中只有一层网络
             in_filters = feat_channels[i]  # 10
             out_filters = feat_channels[i + 1]  # 64
             if i < len(feat_channels) - 2:  # False
@@ -76,18 +76,18 @@ class PillarFeatureNet(nn.Module):
                 PFNLayer(
                     in_filters,  # 10
                     out_filters,  # 64
-                    norm_cfg=norm_cfg,
-                    last_layer=last_layer,
-                    mode=mode))
+                    norm_cfg=norm_cfg,  # {'type': 'BN1d', 'eps': 0.001, 'momentum': 0.01}
+                    last_layer=last_layer,  # True
+                    mode=mode))  # max
         self.pfn_layers = nn.ModuleList(pfn_layers)  # fpn层加入模块中
 
         # Need pillar (voxel) size and x/y offset in order to calculate offset  计算体素中点的偏移量
-        self.vx = voxel_size[0]
-        self.vy = voxel_size[1]
-        self.vz = voxel_size[2]
-        self.x_offset = self.vx / 2 + point_cloud_range[0]
-        self.y_offset = self.vy / 2 + point_cloud_range[1]
-        self.z_offset = self.vz / 2 + point_cloud_range[2]
+        self.vx = voxel_size[0]  # 0.16
+        self.vy = voxel_size[1]  # 0.16
+        self.vz = voxel_size[2]  # 4
+        self.x_offset = self.vx / 2 + point_cloud_range[0]  # 0.08
+        self.y_offset = self.vy / 2 + point_cloud_range[1]  # -39.6
+        self.z_offset = self.vz / 2 + point_cloud_range[2]  # -1.0
         self.point_cloud_range = point_cloud_range
 
     @force_fp32(out_fp16=True)
@@ -96,21 +96,25 @@ class PillarFeatureNet(nn.Module):
 
         Args:
             features (torch.Tensor): Point features or raw points in shape
-                (N, M, C).
+                (N, M, C). = voxels
             num_points (torch.Tensor): Number of points in each pillar.
             coors (torch.Tensor): Coordinates of each voxel.体素自身坐标，16000x4，[batch_id, x, y, z]
 
         Returns:
             torch.Tensor: Features of pillars.
         """
-        features_ls = [features]  # 创建特征列表，后续将voxel中point位置特征传入列表中
+        # 将传入的特征tensor放入list
+        features_ls = [features]
         # Find distance of x, y, and z from cluster center
         if self._with_cluster_center:
+            # points_mean体素内中心点坐标
             points_mean = features[:, :, :3].sum(
                 dim=1, keepdim=True) / num_points.type_as(features).view(
                     -1, 1, 1)
+            # 体素中每个点与中心点坐标偏移
             f_cluster = features[:, :, :3] - points_mean
-            features_ls.append(f_cluster)  # 加入偏移聚类中心特征
+            # 加入偏移聚类中心特征
+            features_ls.append(f_cluster)  # [[x,y,z,r],[x',y',z']]
 
         # Find distance of x, y, and z from pillar center
         dtype = features.dtype  # torch.float32
@@ -137,26 +141,30 @@ class PillarFeatureNet(nn.Module):
                 f_center[:, :, 2] = f_center[:, :, 2] - (
                     coors[:, 1].type_as(features).unsqueeze(1) * self.vz +
                     self.z_offset)
-            features_ls.append(f_center)  # 加入偏移几何中心特征
+            # 加入偏移体素中心特征
+            features_ls.append(f_center)  # [[x,y,z,r],[x',y',z'],[xp,yp,zp]]
 
         if self._with_distance:  # default False
             points_dist = torch.norm(features[:, :, :3], 2, 2, keepdim=True)
             features_ls.append(points_dist)
 
         # Combine together feature decorations
-        features = torch.cat(features_ls, dim=-1)  # concat特征 10
+        features = torch.cat(features_ls, dim=-1)  # concat特征 10 [x,y,z,r,x',y',z',xp,yp,zp]
         # The feature decorations were calculated without regard to whether
         # pillar was empty. Need to ensure that
-        # empty pillars remain set to zeros.需要将空柱子中加入零点
+        # empty pillars remain set to zeros.
+        # 将采样点不足的voxel中加入0补充
         voxel_count = features.shape[1]
         mask = get_paddings_indicator(num_points, voxel_count, axis=0)
         mask = torch.unsqueeze(mask, -1).type_as(features)
         features *= mask
 
+        # 抽取每个体素内的特征
         for pfn in self.pfn_layers:
-            features = pfn(features, num_points)  # 将特征放入FPN中提取并maxpooling，channels: in10 out64
-                                                  # 32*10->32*64->1*64
-        return features.squeeze(1)
+            # 将特征放入FPN中提取并maxpooling，channels: in10 out64
+            features = pfn(features, num_points)  # 32*10->32*64->1*64
+
+        return features.squeeze(1)  # 去除tensor中维度为1的维度，此处就是去除num_points这个维度
 
 
 @VOXEL_ENCODERS.register_module()
@@ -212,30 +220,33 @@ class DynamicPillarFeatureNet(PillarFeatureNet):
             mode=mode,
             legacy=legacy)
         self.fp16_enabled = False
-        feat_channels = [self.in_channels] + list(feat_channels)
+        feat_channels = [self.in_channels] + list(feat_channels)  # [10, 64]
+        # 因为在class PillarFeatureNet的初始化中pfn_layers不是self，不能继承时初始化，所以在这里要重新初始化
         pfn_layers = []
         # TODO: currently only support one PFNLayer
 
-        for i in range(len(feat_channels) - 1):
-            in_filters = feat_channels[i]
-            out_filters = feat_channels[i + 1]
+        for i in range(len(feat_channels) - 1):  # 只添加一层PFN
+            in_filters = feat_channels[i]  # [10]
+            out_filters = feat_channels[i + 1]  # [64]
             if i > 0:
                 in_filters *= 2
             norm_name, norm_layer = build_norm_layer(norm_cfg, out_filters)
             pfn_layers.append(
                 nn.Sequential(
-                    nn.Linear(in_filters, out_filters, bias=False), norm_layer,
+                    nn.Linear(in_filters, out_filters, bias=False), norm_layer,  # 10， 64
                     nn.ReLU(inplace=True)))
-        self.num_pfn = len(pfn_layers)
+        self.num_pfn = len(pfn_layers)  # 1
         self.pfn_layers = nn.ModuleList(pfn_layers)
+        # DynamicScatter(voxel_size=[0.16, 0.16, 4], point_cloud_range=[0, -39.68, -3, 69.12, 39.68, 1], average_points=False)
         self.pfn_scatter = DynamicScatter(voxel_size, point_cloud_range,
                                           (mode != 'max'))
+        # DynamicScatter(voxel_size=[0.16, 0.16, 4], point_cloud_range=[0, -39.68, -3, 69.12, 39.68, 1], average_points=True)
         self.cluster_scatter = DynamicScatter(
             voxel_size, point_cloud_range, average_points=True)
 
     def map_voxel_center_to_point(self, pts_coors, voxel_mean, voxel_coors):
         """Map the centers of voxels to its corresponding points.
-
+            将体素的中心映射到其对应点
         Args:
             pts_coors (torch.Tensor): The coordinates of each points, shape
                 (M, 3), where M is the number of points.
@@ -247,30 +258,32 @@ class DynamicPillarFeatureNet(PillarFeatureNet):
             torch.Tensor: Corresponding voxel centers of each points, shape
                 (M, C), where M is the number of points.
         """
-        # Step 1: scatter voxel into canvas
-        # Calculate necessary things for canvas creation
+        # Step 1: scatter voxel into canvas 将体素分散到画布中
+        # Calculate necessary things for canvas creation 计算伪图像大小
         canvas_y = int(
-            (self.point_cloud_range[4] - self.point_cloud_range[1]) / self.vy)
+            (self.point_cloud_range[4] - self.point_cloud_range[1]) / self.vy)  # 496
         canvas_x = int(
-            (self.point_cloud_range[3] - self.point_cloud_range[0]) / self.vx)
-        canvas_channel = voxel_mean.size(1)
-        batch_size = pts_coors[-1, 0] + 1
-        canvas_len = canvas_y * canvas_x * batch_size
+            (self.point_cloud_range[3] - self.point_cloud_range[0]) / self.vx)  # 432
+        canvas_channel = voxel_mean.size(1)  # 4 伪图像输入通道数
+        batch_size = pts_coors[-1, 0] + 1  # 2
+        canvas_len = canvas_y * canvas_x * batch_size  # 428544
         # Create the canvas for this sample
-        canvas = voxel_mean.new_zeros(canvas_channel, canvas_len)
-        # Only include non-empty pillars
+        canvas = voxel_mean.new_zeros(canvas_channel, canvas_len)  # (4,428544)
+        # Only include non-empty pillars 体素索引
         indices = (
             voxel_coors[:, 0] * canvas_y * canvas_x +
-            voxel_coors[:, 2] * canvas_x + voxel_coors[:, 3])
-        # Scatter the blob back to the canvas
-        canvas[:, indices.long()] = voxel_mean.t()
+            voxel_coors[:, 2] * canvas_x + voxel_coors[:, 3])  # (98,)
+        # Scatter the blob back to the canvas将体素特征放到伪图像上
+        canvas[:, indices.long()] = voxel_mean.t()  # (4,428544)
 
         # Step 2: get voxel mean for each point
+        # 点索引
         voxel_index = (
             pts_coors[:, 0] * canvas_y * canvas_x +
-            pts_coors[:, 2] * canvas_x + pts_coors[:, 3])
-        center_per_point = canvas[:, voxel_index.long()].t()
-        return center_per_point
+            pts_coors[:, 2] * canvas_x + pts_coors[:, 3])  # (4030,)
+        # 将体素特征传给体素内的点
+        center_per_point = canvas[:, voxel_index.long()].t()  # (4030,4)
+        return center_per_point  # 每个点对应的体素特征
 
     @force_fp32(out_fp16=True)
     def forward(self, features, coors):
@@ -278,46 +291,52 @@ class DynamicPillarFeatureNet(PillarFeatureNet):
 
         Args:
             features (torch.Tensor): Point features or raw points in shape
-                (N, M, C).
-            coors (torch.Tensor): Coordinates of each voxel
+                (N, M, C). (4030,4)原始点云坐标和r
+            coors (torch.Tensor): Coordinates of each voxel (4030,4)
 
         Returns:
             torch.Tensor: Features of pillars.
         """
-        features_ls = [features]
-        # Find distance of x, y, and z from cluster center
+        features_ls = [features]  # 加入原始点云特征(4030,4) 4:(x,y,z,r)
+        # Find distance of x, y, and z from cluster center 计算点和聚类中心的距离
         if self._with_cluster_center:
-            voxel_mean, mean_coors = self.cluster_scatter(features, coors)
+            # 将原始点分到对应的体素中，并抽取体素特征，返回体素特征和坐标
+            # coors:所有体素的坐标/所有点对应的体素坐标    mean_coors:含有points的体素坐标    voxel_mean：由points提取出的体素特征
+            voxel_mean, mean_coors = self.cluster_scatter(features, coors)  # (98,4) (98,4)
+            # points_mean:点对应的体素特征. 将体素的特征赋给体素内的每个点，以体素特征作为聚类中心
             points_mean = self.map_voxel_center_to_point(
-                coors, voxel_mean, mean_coors)
+                coors, voxel_mean, mean_coors)  # (4030,4)
             # TODO: maybe also do cluster for reflectivity
-            f_cluster = features[:, :3] - points_mean[:, :3]
-            features_ls.append(f_cluster)
+            # 计算点和聚类中心的偏差
+            f_cluster = features[:, :3] - points_mean[:, :3]  # (4030,3)
+            features_ls.append(f_cluster)  # [(4030,4),(4030,3)]
 
-        # Find distance of x, y, and z from pillar center
+        # Find distance of x, y, and z from pillar center 计算点和体素中心的距离
         if self._with_voxel_center:
-            f_center = features.new_zeros(size=(features.size(0), 3))
+            f_center = features.new_zeros(size=(features.size(0), 3))  # (4030,3)
             f_center[:, 0] = features[:, 0] - (
-                coors[:, 3].type_as(features) * self.vx + self.x_offset)
+                coors[:, 3].type_as(features) * self.vx + self.x_offset)  # 点x方向的偏移
             f_center[:, 1] = features[:, 1] - (
-                coors[:, 2].type_as(features) * self.vy + self.y_offset)
+                coors[:, 2].type_as(features) * self.vy + self.y_offset)  # 点y方向的偏移
             f_center[:, 2] = features[:, 2] - (
-                coors[:, 1].type_as(features) * self.vz + self.z_offset)
-            features_ls.append(f_center)
+                coors[:, 1].type_as(features) * self.vz + self.z_offset)  # 点z方向的偏移
+            features_ls.append(f_center)  # f_center=(4030,3) features_ls=[(4030,4),(4030,3)]
 
         if self._with_distance:
             points_dist = torch.norm(features[:, :3], 2, 1, keepdim=True)
             features_ls.append(points_dist)
 
         # Combine together feature decorations
-        features = torch.cat(features_ls, dim=-1)
+        features = torch.cat(features_ls, dim=-1)  # (4030,10) include:点特征(原始坐标)，点与聚类中心距离，点和体素中心距离
         for i, pfn in enumerate(self.pfn_layers):
-            point_feats = pfn(features)
-            voxel_feats, voxel_coors = self.pfn_scatter(point_feats, coors)
+            # 在全局点云内提取点的特征，得到每个点的全局特征 10->64
+            point_feats = pfn(features)  # (4030,64)
+            # 由体素内的点特征计算体素特征 voxel_feats:体素特征 voxel_coors:体素坐标
+            voxel_feats, voxel_coors = self.pfn_scatter(point_feats, coors)  # (98,64) (98,4)
             if i != len(self.pfn_layers) - 1:
                 # need to concat voxel feats if it is not the last pfn
                 feat_per_point = self.map_voxel_center_to_point(
                     coors, voxel_feats, voxel_coors)
                 features = torch.cat([point_feats, feat_per_point], dim=1)
 
-        return voxel_feats, voxel_coors
+        return voxel_feats, voxel_coors  # 提取后的体素特征和体素坐标
