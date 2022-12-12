@@ -61,7 +61,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Train a detector')
     # 训练配置文件地址
     parser.add_argument('config', default='', help='train config file path')
-    parser.add_argument('--work-dir', default='', help='the dir to save logs and models')
+    parser.add_argument('--work-dir', help='the dir to save logs and models')
     parser.add_argument('--resume-from', help='the checkpoint file to resume from')
     # 自动续训不用传参
     parser.add_argument(
