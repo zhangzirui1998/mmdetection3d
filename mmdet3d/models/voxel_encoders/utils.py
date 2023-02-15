@@ -162,7 +162,7 @@ class PFNLayer(nn.Module):
         x = self.linear(inputs)
         x = self.norm(x.permute(0, 2, 1).contiguous()).permute(0, 2,
                                                                1).contiguous()
-        x = F.relu(x)
+        x = F.leaky_relu(x)
 
         if self.mode == 'max':
             if aligned_distance is not None:
