@@ -1,6 +1,6 @@
 # dataset settings
 dataset_type = 'KittiDataset'
-data_root = '/root/autodl-tmp/kitti/'  # 数据集根目录
+data_root = '/home/rui/dataset/kitti/'  # 数据集根目录
 class_names = ['Pedestrian', 'Cyclist', 'Car']
 # 遵循右手系坐标：大拇指指向x轴的正方向，食指指向y轴的正方向时，中指微屈所指的方向就是z轴的正方向
 # 激光雷达坐标系：x正方向为前，y正方向为左，z正方向为上
@@ -103,6 +103,7 @@ train_pipeline = [
     dict(type='DefaultFormatBundle3D', class_names=class_names),  # mmdet3d/datasets/pipelines/formating.py-174行
 
     # 从特定任务加载流程中获取数据
+    # 最后一个流程，决定哪些键值对应的数据会被输入给检测器
     # 添加：img_meta （由 meta_keys 指定的键值构成的 img_meta）
     # 移除：所有除 keys 指定的键值以外的其他键值
     dict(type='Collect3D', keys=['points', 'gt_bboxes_3d', 'gt_labels_3d'])
@@ -145,9 +146,8 @@ test_pipeline = [
 ]
 # construct a pipeline for data and gt loading in show function
 # please keep its loading function consistent with test_pipeline (e.g. client)
-
 """
-    验证过程数据流，最后只输出points，不做数据增强
+    验证过程数据流，最后只输出points，不做数据增强，这里的验证是指可视化，并不是验证
 """
 eval_pipeline = [
     dict(
@@ -169,8 +169,8 @@ eval_pipeline = [
     数据集设置
 """
 data = dict(
-    samples_per_gpu=2,  # batch size
-    workers_per_gpu=1,  # 数据读取进程数
+    samples_per_gpu=6,  # batch size  注意这里是每个GPU，当多个GPU时，不需要调整BS
+    workers_per_gpu=4,  # 数据读取进程数
 
     train=dict(
         type='RepeatDataset',
@@ -193,6 +193,7 @@ data = dict(
     val=dict(
         type=dataset_type,
         data_root=data_root,
+        #samples_per_gpu=2  # 多batch_size验证
         ann_file=data_root + 'kitti_infos_val.pkl',  # 验证数据信息文件
         split='training',
         pts_prefix='velodyne_reduced',
@@ -216,4 +217,4 @@ data = dict(
         box_type_3d='LiDAR',
         file_client_args=file_client_args))
 
-evaluation = dict(interval=20, pipeline=eval_pipeline)  # 训练过程中验证 每隔interval次epoch验证一次
+evaluation = dict(interval=1, pipeline=eval_pipeline)  # 训练过程中验证 每隔interval次epoch验证一次
