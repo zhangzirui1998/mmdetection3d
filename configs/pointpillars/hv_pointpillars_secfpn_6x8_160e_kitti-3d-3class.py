@@ -7,22 +7,10 @@ _base_ = [
 
 point_cloud_range = [0, -39.68, -3, 69.12, 39.68, 1]
 # dataset settings
-data_root = '/root/autodl-tmp/kitti/'  # 数据集根目录
+data_root = '/home/rui/dataset/kitti/'  # 数据集根目录
 class_names = ['Pedestrian', 'Cyclist', 'Car']  # 类别名称
 # PointPillars adopted a different sampling strategies among classes pp在不同类别中采用不同的采样策略
-
 file_client_args = dict(backend='disk')
-# Uncomment the following if use ceph or other file clients.
-# See https://mmcv.readthedocs.io/en/latest/api.html#mmcv.fileio.FileClient
-# for more details.
-# file_client_args = dict(
-#     backend='petrel',
-#     path_mapping=dict({
-#         './data/kitti/':
-#         's3://openmmlab/datasets/detection3d/kitti/',
-#         'data/kitti/':
-#         's3://openmmlab/datasets/detection3d/kitti/'
-#     }))
 
 db_sampler = dict(
     data_root=data_root,
@@ -42,6 +30,7 @@ db_sampler = dict(
     file_client_args=file_client_args)
 
 # PointPillars uses different augmentation hyper parameters
+# 重写train_pipeline，与继承的无关
 train_pipeline = [
     dict(
         type='LoadPointsFromFile',
@@ -102,7 +91,7 @@ data = dict(
 
 # In practice PointPillars also uses a different schedule
 # optimizer
-lr = 0.0003
+lr = 0.001  # 总lr
 optimizer = dict(lr=lr)
 # max_norm=35 is slightly better than 10 for PointPillars in the earlier
 # development of the codebase thus we keep the setting. But we does not
@@ -111,7 +100,11 @@ optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 # PointPillars usually need longer schedule than second, we simply double
 # the training schedule. Do remind that since we use RepeatDataset and
 # repeat factor is 2, so we actually train 160 epochs.
-runner = dict(type='EpochBasedRunner', max_epochs=10)
+runner = dict(type='EpochBasedRunner', max_epochs=80)  # 只控制训练epoch次数，不影响验证
 
 # Use evaluation interval=2 reduce the number of evaluation timese
-evaluation = dict(interval=5)
+# EvalHook
+evaluation = dict(interval=2)  # by_epoch=Ture
+
+# # fp16 settings, the loss scale is specifically tuned to avoid Nan
+# fp16 = dict(loss_scale=32.)
