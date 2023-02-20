@@ -1,11 +1,13 @@
 # 权重文件配置
+# CheckpointHook
 checkpoint_config = dict(interval=1)  # 每隔interval次保存一次权重
 # yapf:disable push
 # By default we use textlogger hook and tensorboard
 # For more loggers see
 # https://mmcv.readthedocs.io/en/latest/api.html#mmcv.runner.LoggerHook
+# TextLoggerHook WandbLoggerHook
 log_config = dict(
-    interval=50,  # 每隔interval次保存一次日志
+    interval=10,  # 每隔interval次保存一次日志
     hooks=[
         dict(type='TextLoggerHook'),
         dict(type='WandbLoggerHook', init_kwargs=dict(project='Your-project'))
