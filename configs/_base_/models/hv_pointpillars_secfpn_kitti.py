@@ -28,7 +28,7 @@ model = dict(
         point_cloud_range=[0, -39.68, -3, 69.12, 39.68, 1]),
     # Converts learned features from dense tensor to sparse pseudo image
     # input: in_channels=64, output_shape=[496, 432]
-    # output: 伪图像[1,64,432,496]：[pillar,features,y,x] ? 为什么输出将 x,y 互换位置
+    # output: 伪图像[1,64,496,432]：[pillar,features,y,x] ? 为什么输出将 x,y 互换位置
     middle_encoder=dict(
         type='PointPillarsScatter', in_channels=64, output_shape=[496, 432]),
     # 输入伪图像，提取多尺度特征，然后输出多尺度伪图像特征  多尺度=3
@@ -61,11 +61,12 @@ model = dict(
             sizes=[[0.8, 0.6, 1.73], [1.76, 0.6, 1.73], [3.9, 1.6, 1.56]],  # Anchor size x,y,z
             rotations=[0, 1.57],  # Rotations of anchors in a single feature grid.
             reshape_out=False),
+        # 是否使用角度差的正弦值作为损失
         diff_rad_by_sin=True,  # Whether to change the difference into sin difference for box regression loss.
         # Bbox Coder for 3D boxes
-        bbox_coder=dict(type='DeltaXYZWLHRBBoxCoder'),  # 对偏差和真实值的计算进行编码
+        bbox_coder=dict(type='DeltaXYZWLHRBBoxCoder'),  # 对偏差和真实值的计算进行编码 anchor based
         loss_cls=dict(
-            type='FocalLoss',
+            type='FocalLoss',  # 由于使用了FocalLoss，不需要对正负样本作平衡
             use_sigmoid=True,
             gamma=2.0,  # 用于抑制容易分辨的样本的损失
             alpha=0.25,  # 用于处理正负样本不平衡，即正样本要比负样本占比小，这是因为负例易分
@@ -75,9 +76,10 @@ model = dict(
             type='CrossEntropyLoss', use_sigmoid=False, loss_weight=0.2)),  # 注意此处不做sigmoid,因为是回归
     # model training and testing settings
     train_cfg=dict(
+        # 正负样本分类
         assigner=[
             dict(  # for Pedestrian
-                type='MaxIoUAssigner',
+                type='MaxIoUAssigner',  # anchor based
                 iou_calculator=dict(type='BboxOverlapsNearest3D'),  # Nearest 3D IoU Calculator
                 pos_iou_thr=0.5,  # IoU threshold for positive bboxes
                 neg_iou_thr=0.35,  # IoU threshold for negative bboxes
@@ -106,8 +108,8 @@ model = dict(
     test_cfg=dict(
         use_rotate_nms=True,  # 计算旋转时使用非极大值抑制
         nms_across_levels=False,
-        nms_thr=0.01,
-        score_thr=0.1,
+        nms_thr=0.01,  # 3D框的IOU超过0.01则做NMS
+        score_thr=0.1,  # 3D框的置信度小于0.1则做NMS
         min_bbox_size=0,
-        nms_pre=100,
-        max_num=50))
+        nms_pre=100,  # 取出置信度前100的预测框做NMS
+        max_num=50))  # 做完NMS后只保留最终的50个框
