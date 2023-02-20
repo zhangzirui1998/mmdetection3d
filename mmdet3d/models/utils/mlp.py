@@ -2,6 +2,7 @@
 from mmcv.cnn import ConvModule
 from mmcv.runner import BaseModule
 from torch import nn as nn
+from mmcv.runner import auto_fp16
 
 
 class MLP(BaseModule):
@@ -30,6 +31,7 @@ class MLP(BaseModule):
                  act_cfg=dict(type='ReLU'),
                  init_cfg=None):
         super().__init__(init_cfg=init_cfg)
+        self.fp16_enabled = False
         self.mlp = nn.Sequential()
         prev_channels = in_channel
         for i, conv_channel in enumerate(conv_channels):
@@ -47,5 +49,6 @@ class MLP(BaseModule):
                     inplace=True))
             prev_channels = conv_channels[i]
 
+    @auto_fp16(apply_to=('img_features'), out_fp32=True)
     def forward(self, img_features):
         return self.mlp(img_features)
