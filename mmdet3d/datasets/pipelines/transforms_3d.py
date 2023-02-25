@@ -434,7 +434,7 @@ class ObjectSample(object):
         sample_2d (bool): Whether to also paste 2D image patch to the images
             This should be true when applying multi-modality cut-and-paste.
             Defaults to False.
-        use_ground_plane (bool): Whether to use gound plane to adjust the
+        use_ground_plane (bool): Whether to use ground plane to adjust the
             3D labels.
     """
 
@@ -607,7 +607,7 @@ class ObjectNoise(object):
 
 @PIPELINES.register_module()
 class GlobalAlignment(object):
-    """Apply global alignment to 3D scene points by rotation and translation.
+    """Apply global alignment to 3D scene points by rotation and translation. 旋转和平移
 
     Args:
         rotation_axis (int): Rotation axis for points and bboxes rotation.
@@ -616,6 +616,7 @@ class GlobalAlignment(object):
         We do not record the applied rotation and translation as in
             GlobalRotScaleTrans. Because usually, we do not need to reverse
             the alignment step.
+            我们不会像在GlobalRotScaleTrans中那样记录应用的旋转和平移。因为通常，我们不需要反转对齐步骤
         For example, ScanNet 3D detection task uses aligned ground-truth
             bounding boxes for evaluation.
     """
@@ -694,7 +695,7 @@ class GlobalAlignment(object):
 
 @PIPELINES.register_module()
 class GlobalRotScaleTrans(object):
-    """Apply global rotation, scaling and translation to a 3D scene.
+    """Apply global rotation, scaling and translation to a 3D scene. 旋转、缩放和平移
 
     Args:
         rot_range (list[float], optional): Range of rotation angle.
@@ -705,6 +706,7 @@ class GlobalRotScaleTrans(object):
             translation noise applied to a scene, which
             is sampled from a gaussian distribution whose standard deviation
             is set by ``translation_std``. Defaults to [0, 0, 0]
+            应用于场景的平移噪声的标准偏差，从高斯分布采样，其标准偏差由“translation_std”设置。
         shift_height (bool, optional): Whether to shift height.
             (the fourth dimension of indoor points) when scaling.
             Defaults to False.
