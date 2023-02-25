@@ -1,6 +1,6 @@
 # dataset settings
 dataset_type = 'KittiDataset'
-data_root = '/home/rui/dataset/kitti/'  # 数据集根目录
+data_root = '/root/autodl-tmp/kitti/'  # 数据集根目录
 class_names = ['Pedestrian', 'Cyclist', 'Car']
 # 遵循右手系坐标：大拇指指向x轴的正方向，食指指向y轴的正方向时，中指微屈所指的方向就是z轴的正方向
 # 激光雷达坐标系：x正方向为前，y正方向为左，z正方向为上

@@ -29,7 +29,7 @@ model = dict(
 
 # dataset settings
 dataset_type = 'KittiDataset'
-data_root = '/home/rui/dataset/kitti/'
+data_root = '/root/autodl-tmp/kitti/'
 class_names = ['Car']
 db_sampler = dict(
     data_root=data_root,
@@ -85,3 +85,5 @@ data = dict(
         dataset=dict(pipeline=train_pipeline, classes=class_names)),
     val=dict(pipeline=test_pipeline, classes=class_names),
     test=dict(pipeline=test_pipeline, classes=class_names))
+
+fp16 = dict(loss_scale=32.)
