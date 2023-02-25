@@ -29,6 +29,7 @@ class MLP(BaseModule):
                  conv_cfg=dict(type='Conv1d'),
                  norm_cfg=dict(type='BN1d'),
                  act_cfg=dict(type='ReLU'),
+                 bias=False,
                  init_cfg=None):
         super().__init__(init_cfg=init_cfg)
         self.fp16_enabled = False
@@ -45,10 +46,10 @@ class MLP(BaseModule):
                     conv_cfg=conv_cfg,
                     norm_cfg=norm_cfg,
                     act_cfg=act_cfg,
-                    bias=True,
+                    bias=bias,
                     inplace=True))
             prev_channels = conv_channels[i]
 
-    @auto_fp16(apply_to=('img_features'), out_fp32=True)
+    @auto_fp16()
     def forward(self, img_features):
         return self.mlp(img_features)
