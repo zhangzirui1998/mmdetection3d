@@ -38,7 +38,7 @@ def parse_args():
         description='MMDet test (and eval) a model')
     parser.add_argument('config', help='test config file path')
     parser.add_argument('checkpoint', help='checkpoint file')
-    parser.add_argument('--out', help='output result file in pickle format')
+    parser.add_argument('--out', help='output result file in pickle format')  # 输出文件格式为pkl --out results.pkl
     parser.add_argument(
         '--fuse-conv-bn',
         action='store_true',
@@ -68,7 +68,7 @@ def parse_args():
         nargs='+',
         help='evaluation metrics, which depends on the dataset, e.g., "bbox",'
         ' "segm", "proposal" for COCO, and "mAP", "recall" for PASCAL VOC')
-    parser.add_argument('--show', action='store_true', help='show results')
+    parser.add_argument('--show', action='store_true', help='show results')  # show=True
     parser.add_argument(
         '--show-dir', help='directory where results will be saved')
     parser.add_argument(
@@ -173,6 +173,7 @@ def main():
         distributed = True
         init_dist(args.launcher, **cfg.dist_params)
 
+    # 测试时的batch_size
     test_dataloader_default_args = dict(
         samples_per_gpu=1, workers_per_gpu=2, dist=distributed, shuffle=False)
 
