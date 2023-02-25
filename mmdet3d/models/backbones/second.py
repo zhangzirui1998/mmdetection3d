@@ -28,7 +28,7 @@ class SECOND(BaseModule):
                  layer_strides=[2, 2, 2],
                  norm_cfg=dict(type='BN', eps=1e-3, momentum=0.01),
                  conv_cfg=dict(type='Conv2d', bias=False),  # 若在卷积或者神经网络计算后加了正则化项，则不需要bias，节省内存
-                 init_cfg=None,  # 配置文件初始化
+                 init_cfg=None,  # 权重初始化
                  pretrained=None):
         super(SECOND, self).__init__(init_cfg=init_cfg)
         # 保证输入、输出、卷积层有相同的stage
@@ -50,7 +50,7 @@ class SECOND(BaseModule):
                     stride=layer_strides[i],  # 2,2,2
                     padding=1),  # 3*3conv,p=1，s=2 输出特征图大小比输入小一半
                 build_norm_layer(norm_cfg, out_channels[i])[1],  # 每次卷积操作后都作一次BN
-                nn.ReLU(inplace=True),  # 每次卷积操作后都作一次ReLU
+                nn.LeakyReLU(inplace=True),  # 每次卷积操作后都作一次ReLU
             ]
             for j in range(layer_num):  # 3,5,5 对每个stage作不同次数的卷积
                 block.append(
@@ -62,7 +62,7 @@ class SECOND(BaseModule):
                         3,
                         padding=1))  # 3*3conv,p=1，s=1 输入输出特征图大小一样
                 block.append(build_norm_layer(norm_cfg, out_channels[i])[1])  # 每次卷积操作后都作一次BN
-                block.append(nn.ReLU(inplace=True))  # 每次卷积操作后都作一次ReLU
+                block.append(nn.LeakyReLU(inplace=True))  # 每次卷积操作后都作一次ReLU
 
             block = nn.Sequential(*block)  # 将列表block的值依次传给nn.Sequential，数据格式转换
             blocks.append(block)  # 每个stage的模块放在一个block里面
@@ -78,7 +78,7 @@ class SECOND(BaseModule):
         else:
             self.init_cfg = dict(type='Kaiming', layer='Conv2d')  # 用凯明的初始化配置
 
-    def forward(self, x):
+    def forward(self, x):  # [2,64,496,432]
         """Forward function.
 
         Args:
