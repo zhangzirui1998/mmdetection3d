@@ -14,6 +14,7 @@ if IS_SPCONV2_AVAILABLE:
 else:
     from mmcv.ops import SparseConvTensor, SparseSequential
 
+from mmdet3d.models.middle_encoders.pillar_scatter import PointPillarsScatter
 
 @MIDDLE_ENCODERS.register_module()
 class SparseEncoder(nn.Module):
@@ -119,8 +120,8 @@ class SparseEncoder(nn.Module):
         """
         coors = coors.int()
         input_sp_tensor = SparseConvTensor(voxel_features, coors,
-                                           self.sparse_shape, batch_size)
-        x = self.conv_input(input_sp_tensor)
+                                           self.sparse_shape, batch_size)  # 转换成稀疏张量
+        x = self.conv_input(input_sp_tensor)  # 第一层主卷积
 
         encode_features = []
         for encoder_layer in self.encoder_layers:
@@ -129,8 +130,8 @@ class SparseEncoder(nn.Module):
 
         # for detection head
         # [200, 176, 5] -> [200, 176, 2]
-        out = self.conv_out(encode_features[-1])
-        spatial_features = out.dense()
+        out = self.conv_out(encode_features[-1])  # 最后一层卷积
+        spatial_features = out.dense()  # 换回稠密张量
 
         N, C, D, H, W = spatial_features.shape
         spatial_features = spatial_features.view(N, C * D, H, W)
@@ -212,6 +213,17 @@ class SparseEncoder(nn.Module):
             stage_layers = SparseSequential(*blocks_list)
             self.encoder_layers.add_module(stage_name, stage_layers)
         return out_channels
+
+
+# @MIDDLE_ENCODERS.register_module()
+# class SparsePillarsEncoder(SparseEncoder, PointPillarsScatter):
+#     def __init__(self, in_channels, output_shape):  # 64->[496,432]
+#         super().__init__()
+#         self.output_shape = output_shape  # [496, 432]
+#         self.ny = output_shape[0]  # 496
+#         self.nx = output_shape[1]  # 432
+#         self.in_channels = in_channels  # 64
+#         self.fp16_enabled = False
 
 
 @MIDDLE_ENCODERS.register_module()
