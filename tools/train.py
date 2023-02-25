@@ -60,7 +60,7 @@ def parse_args():
     # 创建 ArgumentParser 类的实例 parser ， description 程序描述
     parser = argparse.ArgumentParser(description='Train a detector')
     # 训练配置文件地址
-    parser.add_argument('config', default='', help='train config file path')
+    parser.add_argument('config', default='configs/xmu/hv_pp_secfpn_12x6_160e_car_attnpfn.py', help='train config file path')
     parser.add_argument('--work-dir', help='the dir to save logs and models')
     parser.add_argument('--resume-from', help='the checkpoint file to resume from')
     # 自动续训不用传参
@@ -230,7 +230,7 @@ def main():
     # 根据GPU数量自动缩放lr
     if args.autoscale_lr:  # Ture
         # apply the linear scaling rule (https://arxiv.org/abs/1706.02677)
-        # 单卡lr = 总lr * gpu数量 / 8
+        # 单卡lr = 单卡lr * gpu数量 / 8
         # 不改变单卡batch_size时，总lr不需要根据gpu数量调整，下面的公式已经自动调整单卡lr
         cfg.optimizer['lr'] = cfg.optimizer['lr'] * len(cfg.gpu_ids) / 8
 
