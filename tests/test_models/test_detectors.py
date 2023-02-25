@@ -84,7 +84,7 @@ def test_get_dynamic_voxelnet():
         pytest.skip('test requires GPU and torch+cuda')
 
     dynamic_voxelnet_cfg = _get_model_cfg(
-        'xmu_fusion/dv_pointpillars_secfpn_6x8_160e_kitti-3d-3class.py')
+        'xmu/dv_pp_secfpn_12*6_160e_car_dvattnpfn.py')
     self = build_detector(dynamic_voxelnet_cfg).cuda()
     points_0 = torch.rand([2010, 4], device='cuda')
     points_1 = torch.rand([2020, 4], device='cuda')
@@ -100,7 +100,7 @@ def test_voxel_net():
         pytest.skip('test requires GPU and torch+cuda')
     _setup_seed(0)
     voxel_net_cfg = _get_detector_cfg(
-        'xmu_fusion/hv_pointpillars_secfpn_6x8_160e_kitti-3d-3class.py')
+        'xmu/hv_pp_secfpn_6x6_200e_car_attnpfn.py')
 
     self = build_detector(voxel_net_cfg).cuda()
     points_0 = torch.rand([2010, 4], device='cuda')
