@@ -181,3 +181,61 @@ class PFNLayer(nn.Module):
             x_repeat = x_max.repeat(1, inputs.shape[1], 1)
             x_concatenated = torch.cat([x, x_repeat], dim=2)
             return x_concatenated
+
+
+# 定义新的PFN层，不做最大值操作，保留每个Voxel的全部特征点
+class PFNLayer_nomax(nn.Module):
+    def __init__(self,
+                 in_channels,  # 10
+                 out_channels,  # 64
+                 norm_cfg=dict(type='BN1d', eps=1e-3, momentum=0.01),  # {'type':'BN1d', 'eps':0.001, 'momentum':0.01}
+                 last_layer=False,  # True
+                 mode='max'):  # max
+        super(PFNLayer_nomax, self).__init__()
+        self.fp16_enabled = False
+        self.name = 'PFNLayer_nomax'
+        self.last_vfe = last_layer
+        if not self.last_vfe:
+            out_channels = out_channels // 2
+        self.units = out_channels  # 64
+        # BatchNorm1d(64, eps=0.001, momentum=0.01, affine=True, track_running_stats=True)
+        self.norm = build_norm_layer(norm_cfg, self.units)[1]
+        # Linear(in_features=10, out_features=64, bias=False)
+        self.linear = nn.Linear(in_channels, self.units, bias=False)
+
+        assert mode in ['max', 'avg']
+        self.mode = mode
+
+    @auto_fp16(apply_to=('inputs'), out_fp32=True)
+    def forward(self, inputs, num_voxels=None, aligned_distance=None):
+        '''
+
+        Args:
+            inputs: (N, M, C)
+            num_voxels:
+
+        Returns:
+            torch.Tensor: Features of Pillars.
+        '''
+        x = self.linear(inputs)
+        x = self.norm(x.permute(0, 2, 1).contiguous()).permute(0, 2,
+                                                               1).contiguous()
+        x = F.leaky_relu(x)
+
+        if self.mode == 'max':
+            if aligned_distance is not None:
+                x = x.mul(aligned_distance.unsqueeze(-1))
+            x_max = torch.max(x, dim=1, keepdim=True)[0]
+        elif self.mode == 'avg':
+            if aligned_distance is not None:
+                x = x.mul(aligned_distance.unsqueeze(-1))
+            x_max = x.sum(
+                dim=1, keepdim=True) / num_voxels.type_as(inputs).view(
+                -1, 1, 1)
+
+        if self.last_vfe:
+            return x
+        else:
+            x_repeat = x_max.repeat(1, inputs.shape[1], 1)
+            x_concatenated = torch.cat([x, x_repeat], dim=2)
+            return x_concatenated
