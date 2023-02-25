@@ -1,7 +1,9 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 from mmcv.cnn.bricks.registry import ATTENTION
 from mmcv.cnn.bricks.transformer import POSITIONAL_ENCODING, MultiheadAttention, FFN
+from mmcv.cnn.bricks.transformer import build_positional_encoding, build_attention, build_feedforward_network
 from torch import nn as nn
+from mmcv.runner import auto_fp16
 
 
 @ATTENTION.register_module()
@@ -120,12 +122,14 @@ class ConvBNPositionalEncoding(nn.Module):
 
     def __init__(self, input_channel, num_pos_feats=288):
         super().__init__()
+        self.fp16_enabled = False
         self.position_embedding_head = nn.Sequential(
             nn.Conv1d(input_channel, num_pos_feats, kernel_size=1),
             nn.BatchNorm1d(num_pos_feats),
             nn.ReLU(inplace=True),
             nn.Conv1d(num_pos_feats, num_pos_feats, kernel_size=1))
 
+    @auto_fp16()
     def forward(self, xyz):
         """Forward pass.
 
@@ -147,12 +151,26 @@ class PillarAttention(MultiheadAttention):
                  num_heads,
                  attn_drop=0.,
                  proj_drop=0.,
-                 dropout_layer=None,
+                 dropout_layer=dict(type='Dropout', drop_prob=0.),
                  init_cfg=None,
                  batch_first=True,
+                 pos_encoding=dict(type='ConvBNPositionalEncoding',
+                                input_channel=3,
+                                num_pos_feats=3),
+                 # ffn=dict(dict(type='FFN'),
+                 #          embed_dims=3,
+                 #          feedforward_channels=1024,
+                 #          num_fcs=2,
+                 #          act_cfg=dict(type='ReLU', inplace=True),
+                 #          ffn_drop=0.,
+                 #          dropout_layer=None,
+                 #          add_identity=True,
+                 #          init_cfg=None,),
                  **kwargs):
         super().__init__(embed_dims, num_heads, attn_drop, proj_drop,
                          dropout_layer, init_cfg, batch_first, **kwargs)
+        self.pos_encoding = build_positional_encoding(pos_encoding)
+        # self.ffn = build_feedforward_network(ffn)
 
     def forward(self,
                 query,
@@ -173,11 +191,10 @@ class PillarAttention(MultiheadAttention):
         if identity is None:
             identity = query
         # 位置编码
-        pos_encoding = ConvBNPositionalEncoding(3, query.shape[-1])
         query_xyz = query[:, :, :3]  # 选取坐标
         key_xyz = key[:, :, :3]
-        query_posencode = pos_encoding(query_xyz)
-        key_posencode = pos_encoding(key_xyz)
+        query_posencode = self.pos_encoding(query_xyz)
+        key_posencode = self.pos_encoding(key_xyz)
         # key和query使用同一个位置编码
         # if key_pos is None:
         #     if query_pos is not None:
@@ -215,10 +232,6 @@ class PillarAttention(MultiheadAttention):
             out = out.transpose(0, 1)
 
         attn_out = identity + self.dropout_layer(self.proj_drop(out))  # 残差结构
-        # 创建FFN层
-        ffn = FFN(embed_dims=attn_out.shape[-1], feedforward_channels=1024, num_fcs=2,ffn_drop=0.,
-                  dropout_layer=None, add_identity=True)  # True使用残差
-        attn_out = ffn(attn_out)
 
         return attn_out
 
