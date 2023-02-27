@@ -17,6 +17,29 @@ from .data_augment_utils import noise_per_object_v3_
 
 
 @PIPELINES.register_module()
+class NormalizeIntensityTanh():
+    def __init__(self, intensity_column=3, pre_tanh_gain=1., post_tanh_gain=1.):
+        self.intensity_column = intensity_column
+        self.pre_tanh_gain = pre_tanh_gain
+        self.post_tanh_gain = post_tanh_gain
+
+    def __call__(self, input_dict):
+        intensity = input_dict['points'].tensor[:, self.intensity_column]
+        intensity = self.post_tanh_gain * (self.pre_tanh_gain * intensity).tanh()
+        input_dict['points'].tensor[:, self.intensity_column] = intensity
+        input_dict['intensity_norm_cfg'] = dict(
+            pre_tanh_gain=self.pre_tanh_gain,
+            post_tanh_gain=self.post_tanh_gain)
+        return input_dict
+
+    def __repr__(self):
+        repr_str = self.__class__.__name__
+        repr_str += f'(pre_tanh_gain={self.pre_tanh_gain}, '
+        repr_str += f'post_tanh_gain={self.post_tanh_gain})'
+        return repr_str
+
+
+@PIPELINES.register_module()
 class RandomDropPointsColor(object):
     r"""Randomly set the color of points to all zeros.
 
