@@ -358,32 +358,18 @@ class AttnPFN(BaseModule):
                  mode='max',
                  legacy=True,
                  multihead_attention=dict(
-                     type='MultiheadAttention',
-                     embed_dims=64,
-                     num_heads=8,
-                     attn_drop=0.,
-                     proj_drop=0.,
-                     dropout_layer=dict(type='Dropout', drop_prob=0.),
-                     init_cfg=None,
-                     batch_first=True),
+                     type='SelfAttention',
+                     num_attention_heads=4,
+                     input_size=10,
+                     hidden_size=64),
                  pos_encoding=dict(
                      type='ConvBNPositionalEncoding',
-                     input_channel=64,
-                     num_pos_feats=64),
+                     input_channel=10,
+                     num_pos_feats=10),
                  # mlp
-                 mlp_in_channel=10,
+                 mlp_in_channel=64,
                  mlp_conv_channels=(64,),
-                 mlp_conv_cfg=dict(type='Conv1d'),
-                 mlp_norm_cfg=dict(type='BN1d'),
-                 mlp_act_cfg=dict(type='LeakyReLU'),
                  mlp_bias=False,
-                 # # ffn
-                 # ffn=dict(
-                 #     type='FFN',
-                 #     embed_dims=10,
-                 #     feedforward_channels=64,
-                 #     num_fcs=2,
-                 #     ffn_drop=0.1)
                  ):
 
         super(AttnPFN, self).__init__()
@@ -419,15 +405,11 @@ class AttnPFN(BaseModule):
                     mode=mode))  # max
         self.pfn_layers = nn.ModuleList(pfn_layers)  # fpn层加入模块中
         # MLP
-        self.mlp = MLP(in_channel=mlp_in_channel, conv_channels=mlp_conv_channels,
-                       conv_cfg=mlp_conv_cfg, norm_cfg=mlp_norm_cfg, act_cfg=mlp_act_cfg,
-                       bias=mlp_bias)
+        self.mlp = MLP(in_channel=mlp_in_channel, conv_channels=mlp_conv_channels, bias=mlp_bias)
         # pos_encoding
         self.pos_encoding = build_positional_encoding(pos_encoding)
         # multihead_attention
         self.multihead_attention = build_attention(multihead_attention)
-        # # ffn
-        # self.ffn = build_feedforward_network(ffn)
 
         # Need pillar (voxel) size and x/y offset in order to calculate offset  计算体素中点的偏移量
         self.vx = voxel_size[0]  # 0.16
@@ -437,8 +419,6 @@ class AttnPFN(BaseModule):
         self.y_offset = self.vy / 2 + point_cloud_range[1]  # -39.6
         self.z_offset = self.vz / 2 + point_cloud_range[2]  # -1.0
         self.point_cloud_range = point_cloud_range
-
-        self.mlp2 = MLP(64, [64, 64], act_cfg=mlp_act_cfg, bias=False)
 
 
     @force_fp32(out_fp16=True)
@@ -510,34 +490,34 @@ class AttnPFN(BaseModule):
         voxel_count = features.shape[1]  # 每个体素中的点数
         mask = get_paddings_indicator(num_points, voxel_count, axis=0)
         mask = torch.unsqueeze(mask, -1).type_as(features)
-        features *= mask  # 增强后的10维特征
+        features *= mask  # 增强后的10维特征 [97297,20,10]
 
         # ---------------------------------------step2 pfn-------------------------------------
         pfn_features = features
         for pfn in self.pfn_layers:
             # 将特征放入FPN中提取并maxpooling，channels: in10 out64
-            pfn_features = pfn(pfn_features, num_points)
+            pfn_features = pfn(pfn_features, num_points)  # [97297,20,64]
         fm = torch.max(pfn_features, dim=1, keepdim=True)[0]
 
         # ---------------------------------------step3 pos_encoding-------------------------------------
-        # features = features.transpose(1, 2)
-        # features = self.mlp(features)
-        # features = features.transpose(1, 2)
-        pos_encoding = self.pos_encoding(features)
-        pos_encoding = pos_encoding.transpose(1, 2)
+        pos_encoding = self.pos_encoding(features)  # [97297,20,10]
 
         # ---------------------------------------step4 multihead_attention-------------------------------------
-        multihead_attention = self.multihead_attention(query=features, query_pos=pos_encoding, key_pos=pos_encoding)
-        # multihead_attention = self.ffn(multihead_attention)  # ffn
-        # mlp
-        multihead_attention = self.mlp(multihead_attention.transpose(1, 2)).transpose(1, 2)
-        a = torch.sum(multihead_attention, dim=2, keepdim=True)
-        fa = (pfn_features * multihead_attention) / a
+        # # 10维增强特征升维
+        # features = features.transpose(1, 2)
+        # features = self.mlp(features)  # 10-64
+        # features = features.transpose(1, 2)
+        # 特征+位置编码
+        features = features + pos_encoding
+        # multi-self-attention
+        score = self.multihead_attention(features)  # [97297,20,64]
+        score_sum = torch.sum(score, dim=2, keepdim=True)
+        fa = (pfn_features * score) / score_sum
         fa = torch.sum(fa, dim=1, keepdim=True)  # (97297,1,64)
 
         # 总特征
-        f = ((fa + fm) / 2).transpose(1, 2)
-        f = self.mlp2(f).transpose(1, 2)
+        f = ((fa + fm) / 2)
+        f = self.mlp(f.transpose(1, 2)).transpose(1, 2)
 
         return f.squeeze(1)  # (98,64)
 
