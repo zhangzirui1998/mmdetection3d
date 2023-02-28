@@ -4,41 +4,31 @@ point_cloud_range = [0, -39.68, -3, 69.12, 39.68, 1]
 model = dict(
     type='VoxelNet',
     voxel_layer=dict(
-        max_num_points=32,
+        max_num_points=32,  # max_points_per_voxel second=5,voxelnet=35
         point_cloud_range=point_cloud_range,
         voxel_size=voxel_size,
-        max_voxels=(16000, 40000)),
+        max_voxels=(16000, 40000)),  # (training, testing) max_voxels  432*496=214272 有许多空体素，用稀疏卷积
     voxel_encoder=dict(
         type='AttnPFN',
         in_channels=4,
-        feat_channels=[64],
+        feat_channels=(64,),
         with_distance=False,
-        voxel_size=[0.16, 0.16, 4],
-        point_cloud_range=[0, -39.68, -3, 69.12, 39.68, 1],
+        with_cluster_center=True,
+        with_voxel_center=True,
+        voxel_size=(0.2, 0.2, 4),
+        point_cloud_range=(0, -40, -3, 70.4, 40, 1),
         norm_cfg=dict(type='BN1d', eps=1e-3, momentum=0.01),
-        mode='max',
+        mode='max',  # second源码中用avg pooling
         legacy=True,
         multihead_attention=dict(
-            type='MultiheadAttention',
-            embed_dims=10,
-            num_heads=1,
-            attn_drop=0.1,
-            proj_drop=0.1,
-            dropout_layer=dict(type='Dropout', drop_prob=0.1),
-            init_cfg=None,
-            batch_first=True),
-        pos_encoding=dict(
-            type='ConvBNPositionalEncoding',
-            input_channel=10,
-            num_pos_feats=10),
+            type='SelfAttention',
+            num_attention_heads=4,
+            input_size=10,
+            hidden_size=64),
         # mlp
-        mlp_in_channel=10,
-        mlp_conv_channels=[64],
-        mlp_conv_cfg=dict(type='Conv1d'),
-        mlp_norm_cfg=dict(type='BN1d'),
-        mlp_act_cfg=dict(type='LeakyReLU'),
-        mlp_bias=False,
-        ),  # out_channels=64
+        mlp_in_channel=64,
+        mlp_conv_channels=(64,)),  # out_channels=64
+    # output: 伪图像[1,64,496,432]：[pillar,features,y,x] ? 为什么输出将 x,y 互换位置
     middle_encoder=dict(
         type='PointPillarsScatter', in_channels=64, output_shape=[496, 432]),
     backbone=dict(
@@ -61,46 +51,49 @@ model = dict(
     bbox_head=dict(
         type='Anchor3DHead',
         num_classes=1,
-        in_channels=384,
-        feat_channels=384,
-        use_direction_classifier=True,
+        in_channels=384,  # 128*3 Number of channels in the input feature map
+        feat_channels=384,  # Number of channels of the feature map
+        use_direction_classifier=True,  #  Whether to add a direction classifier.
         anchor_generator=dict(
-            type='AlignedAnchor3DRangeGenerator',
-            ranges=[[0, -39.68, -1.78, 69.12, 39.68, -1.78]],
-            sizes=[[3.9, 1.6, 1.56]],
-            rotations=[0, 1.57],
+            type='AlignedAnchor3DRangeGenerator',  # Aligned 3D Anchor Generator by range
+            ranges=[[0, -39.68, -1.78, 69.12, 39.68, -1.78]],  # x_min, y_min, z_min, x_max, y_max, z_max
+            sizes=[[3.9, 1.6, 1.56]],  # Anchor size x,y,z
+            rotations=[0, 1.57],  # Rotations of anchors in a single feature grid.
             reshape_out=True),
-        diff_rad_by_sin=True,
-        bbox_coder=dict(type='DeltaXYZWLHRBBoxCoder'),
+        diff_rad_by_sin=True,  # 是否使用角度差的正弦值作为损失
+        bbox_coder=dict(type='DeltaXYZWLHRBBoxCoder'),  # 对偏差和真实值的计算进行编码 anchor based
         loss_cls=dict(
-            type='FocalLoss',
+            type='FocalLoss',  # 由于使用了FocalLoss，不需要对正负样本作平衡
             use_sigmoid=True,
-            gamma=2.0,
-            alpha=0.25,
-            loss_weight=1.0),
-        loss_bbox=dict(type='SmoothL1Loss', beta=1.0 / 9.0, loss_weight=2.0),
+            gamma=2.0,  # 用于抑制容易分辨的样本的损失
+            alpha=0.25,  # 用于处理正负样本不平衡，即正样本要比负样本占比小，这是因为负例易分
+            loss_weight=1.0),  # 分类损失占总损失的权重
+        loss_bbox=dict(type='SmoothL1Loss', beta=1.0 / 9.0, loss_weight=2.0),  # 先验分布服从拉普拉斯
         loss_dir=dict(
-            type='CrossEntropyLoss', use_sigmoid=False, loss_weight=0.2)),
+            type='CrossEntropyLoss', use_sigmoid=False, loss_weight=0.2)),  # 注意此处不做sigmoid,因为是回归
     # model training and testing settings
     train_cfg=dict(
+        # 正负样本分类
         assigner=dict(
-            type='MaxIoUAssigner',
-            iou_calculator=dict(type='BboxOverlapsNearest3D'),
-            pos_iou_thr=0.6,
-            neg_iou_thr=0.45,
-            min_pos_iou=0.45,
-            ignore_iof_thr=-1),
+            type='MaxIoUAssigner',  # anchor based
+            iou_calculator=dict(type='BboxOverlapsNearest3D'),  # Nearest 3D IoU Calculator
+            pos_iou_thr=0.6,  # IoU threshold for positive bboxes
+            neg_iou_thr=0.45,  # IoU threshold for negative bboxes
+            min_pos_iou=0.45,  # Minimum iou for a bbox to be considered as a positive bbox
+            # gt_max_assign_all=True，意思是当一个gt与他的所有anchor的iou都不超过0.6，
+            # 那么就把与gt的iou最高的所有anchor都设为postive,但这个iuo的阈值为min_pos_iou
+            ignore_iof_thr=-1),  # ignore_iof_thr为负值意思是不忽略任何bbox
         allowed_border=0,
         pos_weight=-1,
         debug=False),
     test_cfg=dict(
-        use_rotate_nms=True,
+        use_rotate_nms=True,  # 计算旋转时使用非极大值抑制
         nms_across_levels=False,
-        nms_thr=0.01,
-        score_thr=0.1,
+        nms_thr=0.01,  # 3D框的IOU超过0.01则做NMS
+        score_thr=0.1,  # 3D框的置信度小于0.1则做NMS
         min_bbox_size=0,
-        nms_pre=100,
-        max_num=50))
+        nms_pre=100,  # 取出置信度前100的预测框做NMS
+        max_num=50))  # 做完NMS后只保留最终的50个框
 
 # dataset settings
 dataset_type = 'KittiDataset'
@@ -141,6 +134,7 @@ train_pipeline = [
     dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range),
     dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
     dict(type='PointShuffle'),
+    # dict(type='NormalizeIntensityTanh', intensity_column=3),  # 增加fp16中数值稳定性
     dict(type='DefaultFormatBundle3D', class_names=class_names),
     dict(type='Collect3D', keys=['points', 'gt_bboxes_3d', 'gt_labels_3d'])
 ]
@@ -161,6 +155,7 @@ test_pipeline = [
             dict(
                 type='PointsRangeFilter',
                 point_cloud_range=point_cloud_range),
+            # dict(type='NormalizeIntensityTanh', intensity_column=3),  # 增加fp16中数值稳定性
             dict(
                 type='DefaultFormatBundle3D',
                 class_names=class_names,
@@ -223,11 +218,11 @@ data = dict(
         box_type_3d='LiDAR',
         file_client_args=file_client_args))
 # optimizer
-lr = 0.0013
+lr = 0.001
 optimizer = dict(
     type='AdamW',
     lr=lr,
-    betas=(0.95, 0.99),  # the momentum is change during training
+    betas=(0.95, 0.99), # the momentum is change during training
     weight_decay=0.01)
 # max_norm越大，对于梯度爆炸的解决越柔和，max_norm越小，对梯度爆炸的解决越狠
 # norm_type越小，对梯度裁剪越厉害
@@ -243,11 +238,11 @@ momentum_config = dict(
     target_ratio=(0.85 / 0.95, 1),
     cyclic_times=1,
     step_ratio_up=0.4)
-checkpoint_config = dict(interval=2)
-evaluation = dict(interval=5, pipeline=eval_pipeline)
+checkpoint_config = dict(interval=4)
+evaluation = dict(interval=4, pipeline=eval_pipeline)
 # yapf:disable
 log_config = dict(
-    interval=30,
+    interval=50,
     hooks=[
         dict(type='TextLoggerHook'),
         dict(type='WandbLoggerHook', init_kwargs=dict(project='Your-project'))
@@ -264,3 +259,5 @@ workflow = [('train', 1)]
 opencv_num_threads = 0
 mp_start_method = 'fork'
 # fp16 = dict(loss_scale=32.)
+# 检查loss异常值
+checkinvalidloss = dict(type='CheckInvalidLossHook', interval=50)  # 每隔多少个iter检查一次
