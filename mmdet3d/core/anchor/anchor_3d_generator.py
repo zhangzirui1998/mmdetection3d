@@ -78,8 +78,8 @@ class Anchor3DRangeGenerator(object):
     @property
     def num_base_anchors(self):
         """list[int]: Total number of base anchors in a feature grid."""
-        num_rot = len(self.rotations)
-        num_size = torch.tensor(self.sizes).reshape(-1, 3).size(0)
+        num_rot = len(self.rotations)  # 2
+        num_size = torch.tensor(self.sizes).reshape(-1, 3).size(0)  # 1
         return num_rot * num_size
 
     @property
@@ -249,9 +249,9 @@ class AlignedAnchor3DRangeGenerator(Anchor3DRangeGenerator):
             center of the corresponding greature grid. Defaults to False.
     """
 
-    def __init__(self, align_corner=False, **kwargs):
+    def __init__(self, align_corner=False, **kwargs):# False,{'ranges': [[0, -39.68, -1.78, 69.12, 39.68, -1.78]], 'sizes': [[3.9, 1.6, 1.56]], 'rotations': [0, 1.57], 'reshape_out': True}
         super(AlignedAnchor3DRangeGenerator, self).__init__(**kwargs)
-        self.align_corner = align_corner
+        self.align_corner = align_corner  # False
 
     def anchors_single_range(self,
                              feature_size,
