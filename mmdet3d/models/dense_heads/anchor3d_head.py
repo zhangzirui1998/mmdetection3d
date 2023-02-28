@@ -69,17 +69,17 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
                  loss_dir=dict(type='CrossEntropyLoss', loss_weight=0.2),
                  init_cfg=None):
         super().__init__(init_cfg=init_cfg)
-        self.in_channels = in_channels
-        self.num_classes = num_classes
-        self.feat_channels = feat_channels
-        self.diff_rad_by_sin = diff_rad_by_sin
-        self.use_direction_classifier = use_direction_classifier
+        self.in_channels = in_channels  # 384
+        self.num_classes = num_classes  # 1or3
+        self.feat_channels = feat_channels  # 384
+        self.diff_rad_by_sin = diff_rad_by_sin  # Ture
+        self.use_direction_classifier = use_direction_classifier  # Ture
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
-        self.assigner_per_size = assigner_per_size
-        self.assign_per_class = assign_per_class
+        self.assigner_per_size = assigner_per_size  # car:False, 3class:Ture
+        self.assign_per_class = assign_per_class  # car:False, 3class:Ture
         self.dir_offset = dir_offset
-        self.dir_limit_offset = dir_limit_offset
+        self.dir_limit_offset = dir_limit_offset  # 0
         import warnings
         warnings.warn(
             'dir_offset and dir_limit_offset will be depressed and be '
@@ -89,14 +89,14 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
         # build anchor generator 创建先验框
         self.anchor_generator = build_prior_generator(anchor_generator)
         # In 3D detection, the anchor stride is connected with anchor size
-        self.num_anchors = self.anchor_generator.num_base_anchors
+        self.num_anchors = self.anchor_generator.num_base_anchors  # 2
         # build box coder 构建框编码器
         self.bbox_coder = build_bbox_coder(bbox_coder)
-        self.box_code_size = self.bbox_coder.code_size
+        self.box_code_size = self.bbox_coder.code_size  # 7
 
         # build loss function
-        self.use_sigmoid_cls = loss_cls.get('use_sigmoid', False)
-        self.sampling = loss_cls['type'] not in ['FocalLoss', 'GHMC']
+        self.use_sigmoid_cls = loss_cls.get('use_sigmoid', False)  # Ture
+        self.sampling = loss_cls['type'] not in ['FocalLoss', 'GHMC']  # False
         if not self.use_sigmoid_cls:
             self.num_classes += 1
         self.loss_cls = build_loss(loss_cls)
@@ -117,29 +117,29 @@ class Anchor3DHead(BaseModule, AnchorTrainMixin):
 
     def _init_assigner_sampler(self):
         """Initialize the target assigner and sampler of the head."""
-        if self.train_cfg is None:
+        if self.train_cfg is None:  # False
             return
 
-        if self.sampling:
-            self.bbox_sampler = build_sampler(self.train_cfg.sampler)
+        if self.sampling:  # False
+            self.bbox_sampler = build_sampler(self.train_cfg.sampler)  # FocalLoss
         else:
             self.bbox_sampler = PseudoSampler()
-        if isinstance(self.train_cfg.assigner, dict):
-            self.bbox_assigner = build_assigner(self.train_cfg.assigner)
-        elif isinstance(self.train_cfg.assigner, list):
+        if isinstance(self.train_cfg.assigner, dict):  # Ture
+            self.bbox_assigner = build_assigner(self.train_cfg.assigner)  # MaxIoUAssigner:Nearest 3D IoU Calculator
+        elif isinstance(self.train_cfg.assigner, list):  # False
             self.bbox_assigner = [
                 build_assigner(res) for res in self.train_cfg.assigner
             ]
 
     def _init_layers(self):
         """Initialize neural network layers of the head."""
-        self.cls_out_channels = self.num_anchors * self.num_classes
-        self.conv_cls = nn.Conv2d(self.feat_channels, self.cls_out_channels, 1)
+        self.cls_out_channels = self.num_anchors * self.num_classes  # 2
+        self.conv_cls = nn.Conv2d(self.feat_channels, self.cls_out_channels, 1)  # [384,2,1,1]
         self.conv_reg = nn.Conv2d(self.feat_channels,
-                                  self.num_anchors * self.box_code_size, 1)
-        if self.use_direction_classifier:
+                                  self.num_anchors * self.box_code_size, 1)  # [384,14,1,1]
+        if self.use_direction_classifier:  # Ture
             self.conv_dir_cls = nn.Conv2d(self.feat_channels,
-                                          self.num_anchors * 2, 1)
+                                          self.num_anchors * 2, 1)  # [384,4,1,1]
 
     def forward_single(self, x):
         """Forward function on a single-scale feature map.
