@@ -149,7 +149,7 @@ class ConvBNPositionalEncoding(nn.Module):
 
 @ATTENTION.register_module()
 class SelfAttention(BaseModule):
-    def __init__(self, num_attention_heads, input_size, hidden_size, init_cfg):
+    def __init__(self, num_attention_heads, input_size, hidden_size, init_cfg=None):
         """
 
         Args:
@@ -172,10 +172,9 @@ class SelfAttention(BaseModule):
         self.value = nn.Conv1d(input_size, self.all_head_size, kernel_size=1, bias=False)  # Wv
 
         # 做完self-attention 做一个前馈全连接 LayerNorm 输出
-        self.ffn = nn.Conv1d(hidden_size, hidden_size, kernel_size=1, bias=False)
+        self.mlp = nn.Conv1d(hidden_size, hidden_size, kernel_size=1, bias=False)
         self.bn1d = nn.BatchNorm1d(hidden_size)
         self.relu = nn.LeakyReLU(inplace=True)
-        self.dropout = nn.Dropout(0.2)
 
         #初始化
         if init_cfg is None:
@@ -211,7 +210,6 @@ class SelfAttention(BaseModule):
 
         # Normalize the attention_scores to probabilities.注意力矩阵归一化得到注意力分数
         attention_probs = nn.Softmax(dim=-1)(attention_scores)  # [batch,num_attention_heads,n,n]
-        attention_probs = self.dropout(attention_probs)
 
         # 注意力分数矩阵*V
         context_layer = torch.matmul(attention_probs, value_layer)  # [batch,num_attention_heads,n,attention_head_size]
@@ -220,12 +218,9 @@ class SelfAttention(BaseModule):
         # 将各头的结果拼接起来，减少一个维度
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
         context_layer = context_layer.view(*new_context_layer_shape)  # [batch,n,all_head_size]
-        # 应对attention结果做ln,relu
-        context_layer = self.bn1d((context_layer + mixed_value_layer).transpose(1,2)).transpose(1,2)
 
-        # 做残差连接的FFN
-        hidden_states = self.relu(self.bn1d(self.ffn(context_layer.transpose(1,2))).transpose(1,2))
-        hidden_states = self.relu(self.bn1d(self.ffn((hidden_states + context_layer).transpose(1,2))).transpose(1,2))  # 是否俩次都加relu
+        # mlp
+        hidden_states = self.relu(self.bn1d(self.mlp((context_layer + mixed_value_layer).transpose(1,2))).transpose(1,2))
 
         return hidden_states  # [batch,n,all_head_size]
 
