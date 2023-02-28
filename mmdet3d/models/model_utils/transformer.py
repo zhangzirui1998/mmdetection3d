@@ -3,7 +3,9 @@ from mmcv.cnn.bricks.registry import ATTENTION
 from mmcv.cnn.bricks.transformer import POSITIONAL_ENCODING, MultiheadAttention, FFN
 from mmcv.cnn.bricks.transformer import build_positional_encoding, build_attention, build_feedforward_network
 from torch import nn as nn
-from mmcv.runner import auto_fp16
+from mmcv.runner import auto_fp16, BaseModule
+import torch
+import math
 
 
 @ATTENTION.register_module()
@@ -124,12 +126,12 @@ class ConvBNPositionalEncoding(nn.Module):
         super().__init__()
         self.fp16_enabled = False
         self.position_embedding_head = nn.Sequential(
-            nn.Conv1d(input_channel, num_pos_feats, kernel_size=1),
+            nn.Conv1d(input_channel, num_pos_feats, kernel_size=1, bias=False),
             nn.BatchNorm1d(num_pos_feats),
-            nn.ReLU(inplace=True),
+            nn.LeakyReLU(inplace=True),
             nn.Conv1d(num_pos_feats, num_pos_feats, kernel_size=1))
 
-    @auto_fp16()
+    @auto_fp16(out_fp32=True)
     def forward(self, xyz):
         """Forward pass.
 
@@ -141,7 +143,91 @@ class ConvBNPositionalEncoding(nn.Module):
         """
         xyz = xyz.permute(0, 2, 1)
         position_embedding = self.position_embedding_head(xyz)
+        position_embedding = position_embedding.permute(0, 2, 1)
         return position_embedding
+
+
+@ATTENTION.register_module()
+class SelfAttention(BaseModule):
+    def __init__(self, num_attention_heads, input_size, hidden_size, init_cfg):
+        """
+
+        Args:
+            num_attention_heads: 多头的头数
+            input_size: 输入特征维度
+            hidden_size: 输出特征维度
+            hidden_dropout_prob: dropout值
+        """
+        super(SelfAttention, self).__init__()
+        if hidden_size % num_attention_heads != 0:
+            raise ValueError(
+                "The hidden size (%d) is not a multiple of the number of attention "
+                "heads (%d)" % (hidden_size, num_attention_heads))
+        self.num_attention_heads = num_attention_heads  # 头数
+        self.attention_head_size = int(hidden_size / num_attention_heads)  # 每个头的维度
+        self.all_head_size = hidden_size  # 所有头的总维数
+
+        self.query = nn.Conv1d(input_size, self.all_head_size, kernel_size=1, bias=False)  # Wq
+        self.key = nn.Conv1d(input_size, self.all_head_size, kernel_size=1, bias=False)  # Wk
+        self.value = nn.Conv1d(input_size, self.all_head_size, kernel_size=1, bias=False)  # Wv
+
+        # 做完self-attention 做一个前馈全连接 LayerNorm 输出
+        self.ffn = nn.Conv1d(hidden_size, hidden_size, kernel_size=1, bias=False)
+        self.bn1d = nn.BatchNorm1d(hidden_size)
+        self.relu = nn.LeakyReLU(inplace=True)
+        self.dropout = nn.Dropout(0.2)
+
+        #初始化
+        if init_cfg is None:
+            self.init_cfg = dict(type='Kaiming', layer='Conv1d')
+
+    def transpose_for_scores(self, x):
+        """
+
+        将KQV拆分为多个头
+        input:mixed_query_layer[batch,n,all_head_size]
+        output:query_layer[batch,num_attention_heads,n,attention_head_size]
+
+        """
+        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
+        x = x.view(*new_x_shape)
+        return x.permute(0, 2, 1, 3)
+
+    def forward(self, input_tensor):
+        # 将输入*权重矩阵得到 Q K V
+        mixed_query_layer = self.query(input_tensor.transpose(1,2)).transpose(1,2)
+        mixed_key_layer = self.key(input_tensor.transpose(1,2)).transpose(1,2)
+        mixed_value_layer = self.value(input_tensor.transpose(1,2)).transpose(1,2)
+
+        # 将K Q V拆分为多头
+        query_layer = self.transpose_for_scores(mixed_query_layer)  # [batch,num_attention_heads,n,attention_head_size]
+        key_layer = self.transpose_for_scores(mixed_key_layer)  # [batch,num_attention_heads,n,attention_head_size]
+        value_layer = self.transpose_for_scores(mixed_value_layer)  # [batch,num_attention_heads,n,attention_head_size]
+
+        # Take the dot product between "query" and "key" to get the raw attention scores.
+        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))  # [batch,num_attention_heads,n,n]
+        # 除以向量维度的开方，防止注意力分数随维度增大而增大
+        attention_scores = attention_scores / (1e-9 + math.sqrt(self.attention_head_size))  # [batch,num_attention_heads,n,n]
+
+        # Normalize the attention_scores to probabilities.注意力矩阵归一化得到注意力分数
+        attention_probs = nn.Softmax(dim=-1)(attention_scores)  # [batch,num_attention_heads,n,n]
+        attention_probs = self.dropout(attention_probs)
+
+        # 注意力分数矩阵*V
+        context_layer = torch.matmul(attention_probs, value_layer)  # [batch,num_attention_heads,n,attention_head_size]
+        # contiguous()是将tensor的内存变成连续的，为后面的view()做准备
+        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
+        # 将各头的结果拼接起来，减少一个维度
+        new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
+        context_layer = context_layer.view(*new_context_layer_shape)  # [batch,n,all_head_size]
+        # 应对attention结果做ln,relu
+        context_layer = self.bn1d((context_layer + mixed_value_layer).transpose(1,2)).transpose(1,2)
+
+        # 做残差连接的FFN
+        hidden_states = self.relu(self.bn1d(self.ffn(context_layer.transpose(1,2))).transpose(1,2))
+        hidden_states = self.relu(self.bn1d(self.ffn((hidden_states + context_layer).transpose(1,2))).transpose(1,2))  # 是否俩次都加relu
+
+        return hidden_states  # [batch,n,all_head_size]
 
 
 @ATTENTION.register_module()
@@ -155,22 +241,12 @@ class PillarAttention(MultiheadAttention):
                  init_cfg=None,
                  batch_first=True,
                  pos_encoding=dict(type='ConvBNPositionalEncoding',
-                                input_channel=3,
-                                num_pos_feats=3),
-                 # ffn=dict(dict(type='FFN'),
-                 #          embed_dims=3,
-                 #          feedforward_channels=1024,
-                 #          num_fcs=2,
-                 #          act_cfg=dict(type='ReLU', inplace=True),
-                 #          ffn_drop=0.,
-                 #          dropout_layer=None,
-                 #          add_identity=True,
-                 #          init_cfg=None,),
+                                   input_channel=3,
+                                   num_pos_feats=3),
                  **kwargs):
         super().__init__(embed_dims, num_heads, attn_drop, proj_drop,
                          dropout_layer, init_cfg, batch_first, **kwargs)
         self.pos_encoding = build_positional_encoding(pos_encoding)
-        # self.ffn = build_feedforward_network(ffn)
 
     def forward(self,
                 query,
