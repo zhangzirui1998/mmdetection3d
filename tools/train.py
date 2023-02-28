@@ -268,7 +268,7 @@ def main():
         logger_name = 'mmdet'
     # 如果传入 log_file 会保存 log 的输出到 log_file 指定的路径，如果不传入 log_file，不保存日志的输出。只在控制台输出
     logger = get_root_logger(
-        log_file=log_file, log_level=cfg.log_level, name=logger_name)
+        log_file=log_file, log_level=cfg.log_level, name=logger_name)  # log_file是log的地址，INFO，mmdet
 
     # init the meta dict to record some important information such as
     # environment info and seed, which will be logged
@@ -278,7 +278,7 @@ def main():
     env_info_dict = collect_env()  # 获取环境
     env_info = '\n'.join([(f'{k}: {v}') for k, v in env_info_dict.items()])  # 环境字典
     dash_line = '-' * 60 + '\n'  # 分隔线+换行 ------------------------------
-    # logger.info环境输出流
+    # logger.info环境输出流，输出环境
     logger.info('Environment info:\n' + dash_line + env_info + '\n' +
                 dash_line)
 
@@ -290,14 +290,14 @@ def main():
     logger.info(f'Config:\n{cfg.pretty_text}')  # 配置文件内容
 
     # set random seeds
-    seed = init_random_seed(args.seed)  # 初始化随机种子
-    seed = seed + dist.get_rank() if args.diff_seed else seed
+    seed = init_random_seed(args.seed)  # 初始化随机种子 0
+    seed = seed + dist.get_rank() if args.diff_seed else seed  # 0
     logger.info(f'Set random seed to {seed}, '
                 f'deterministic: {args.deterministic}')
     set_random_seed(seed, deterministic=args.deterministic)
-    cfg.seed = seed
+    cfg.seed = seed  # 0
     meta['seed'] = seed
-    meta['exp_name'] = osp.basename(args.config)
+    meta['exp_name'] = osp.basename(args.config)  # 配置文件名
 
     # --------------------------------step2.创建模型并初始化-----------------------------
     model = build_model(
