@@ -75,7 +75,6 @@ class SECONDFPN(BaseModule):
                 dict(type='Constant', layer='NaiveSyncBatchNorm2d', val=1.0)
             ]
 
-    @auto_fp16()
     def forward(self, x):
         """Forward function.
 
