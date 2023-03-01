@@ -13,7 +13,7 @@ class RCSECOND(BaseModule):
                  in_channels=[64, 128, 256],
                  out_channels=[128, 256, 512],
                  fpn_channels=[64, 128, 256],
-                 layer_nums=[3, 5, 5],
+                 layer_nums=[5, 5, 1],
                  layer_strides=[2, 2, 2],
                  norm_cfg=dict(type='BN', eps=1e-3, momentum=0.01),
                  conv_cfg=dict(type='Conv2d', bias=False),
