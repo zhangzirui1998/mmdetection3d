@@ -50,6 +50,18 @@ class MLP(BaseModule):
                     inplace=True))
             prev_channels = conv_channels[i]
 
+        # 初始化
+        if init_cfg is None:
+            if conv_cfg == dict(type='Conv1d'):
+                self.init_cfg = dict(type='Kaiming', layer='Conv1d')
+            elif conv_cfg == dict(type='Conv2d'):
+                self.init_cfg = dict(type='Kaiming', layer='Conv2d')
+            elif conv_cfg == dict(type='Linear'):
+                self.init_cfg = dict(type='Kaiming', layer='Linear')
+            else:
+                self.init_cfg = None
+
+
     @auto_fp16()
     def forward(self, img_features):
         return self.mlp(img_features)
