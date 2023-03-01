@@ -1,7 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import torch
 from mmcv.cnn import build_norm_layer
-from mmcv.runner import auto_fp16
+from mmcv.runner import auto_fp16, BaseModule
 from torch import nn
 from torch.nn import functional as F
 
@@ -104,7 +104,7 @@ class VFELayer(nn.Module):
             return concatenated
 
 
-class PFNLayer(nn.Module):
+class PFNLayer(BaseModule):
     """Pillar Feature Net Layer.
 
     The Pillar Feature Net is composed of a series of these layers, but the
@@ -126,9 +126,10 @@ class PFNLayer(nn.Module):
                  out_channels,  # 64
                  norm_cfg=dict(type='BN1d', eps=1e-3, momentum=0.01),  # {'type':'BN1d', 'eps':0.001, 'momentum':0.01}
                  last_layer=False,  # True
-                 mode='max'):  # max
+                 mode='max',  # max
+                 init_cfg=None):
 
-        super().__init__()
+        super().__init__(init_cfg)
         self.fp16_enabled = False
         self.name = 'PFNLayer'
         self.last_vfe = last_layer
@@ -142,6 +143,10 @@ class PFNLayer(nn.Module):
 
         assert mode in ['max', 'avg']
         self.mode = mode
+
+        # 初始化
+        if init_cfg is None:
+            self.init_cfg = dict(type='Kaiming', layer='Linear')
 
     @auto_fp16(apply_to=('inputs'), out_fp32=True)
     def forward(self, inputs, num_voxels=None, aligned_distance=None):
@@ -184,14 +189,15 @@ class PFNLayer(nn.Module):
 
 
 # 定义新的PFN层，不做最大值操作，保留每个Voxel的全部特征点
-class PFNLayer_nomax(nn.Module):
+class PFNLayer_nomax(BaseModule):
     def __init__(self,
                  in_channels,  # 10
                  out_channels,  # 64
                  norm_cfg=dict(type='BN1d', eps=1e-3, momentum=0.01),  # {'type':'BN1d', 'eps':0.001, 'momentum':0.01}
                  last_layer=False,  # True
-                 mode='max'):  # max
-        super(PFNLayer_nomax, self).__init__()
+                 mode='max',  # max
+                 init_cfg=None):
+        super(PFNLayer_nomax, self).__init__(init_cfg)
         self.fp16_enabled = False
         self.name = 'PFNLayer_nomax'
         self.last_vfe = last_layer
@@ -205,6 +211,10 @@ class PFNLayer_nomax(nn.Module):
 
         assert mode in ['max', 'avg']
         self.mode = mode
+
+        # 初始化
+        if init_cfg is None:
+            self.init_cfg = dict(type='Kaiming', layer='Linear')
 
     @auto_fp16(apply_to=('inputs'), out_fp32=True)
     def forward(self, inputs, num_voxels=None, aligned_distance=None):
