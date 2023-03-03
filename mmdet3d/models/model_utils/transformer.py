@@ -158,7 +158,7 @@ class SelfAttention(BaseModule):
             hidden_size: 输出特征维度
             hidden_dropout_prob: dropout值
         """
-        super(SelfAttention, self).__init__()
+        super(SelfAttention, self).__init__(init_cfg)
         if hidden_size % num_attention_heads != 0:
             raise ValueError(
                 "The hidden size (%d) is not a multiple of the number of attention "
@@ -194,9 +194,9 @@ class SelfAttention(BaseModule):
 
     def forward(self, input_tensor):
         # 将输入*权重矩阵得到 Q K V
-        mixed_query_layer = self.query(input_tensor.transpose(1,2)).transpose(1,2)
-        mixed_key_layer = self.key(input_tensor.transpose(1,2)).transpose(1,2)
-        mixed_value_layer = self.value(input_tensor.transpose(1,2)).transpose(1,2)
+        mixed_query_layer = self.query(input_tensor.transpose(1, 2)).transpose(1, 2)
+        mixed_key_layer = self.key(input_tensor.transpose(1, 2)).transpose(1, 2)
+        mixed_value_layer = self.value(input_tensor.transpose(1, 2)).transpose(1, 2)
 
         # 将K Q V拆分为多头
         query_layer = self.transpose_for_scores(mixed_query_layer)  # [batch,num_attention_heads,n,attention_head_size]
@@ -220,90 +220,60 @@ class SelfAttention(BaseModule):
         context_layer = context_layer.view(*new_context_layer_shape)  # [batch,n,all_head_size]
 
         # mlp
-        hidden_states = self.relu(self.bn1d(self.mlp((context_layer + mixed_value_layer).transpose(1,2))).transpose(1,2))
+        hidden_states = self.relu(self.bn1d(self.mlp((context_layer + mixed_value_layer).transpose(1, 2))).transpose(1, 2))
 
         return hidden_states  # [batch,n,all_head_size]
 
 
 @ATTENTION.register_module()
-class PillarAttention(MultiheadAttention):
-    def __init__(self,
-                 embed_dims,  # default288
-                 num_heads,
-                 attn_drop=0.,
-                 proj_drop=0.,
-                 dropout_layer=dict(type='Dropout', drop_prob=0.),
-                 init_cfg=None,
-                 batch_first=True,
-                 pos_encoding=dict(type='ConvBNPositionalEncoding',
-                                   input_channel=3,
-                                   num_pos_feats=3),
-                 **kwargs):
-        super().__init__(embed_dims, num_heads, attn_drop, proj_drop,
-                         dropout_layer, init_cfg, batch_first, **kwargs)
-        self.pos_encoding = build_positional_encoding(pos_encoding)
+class DynamicSelfAttention(SelfAttention):
+    def __init__(self, num_attention_heads, input_size, hidden_size, init_cfg=None):
+        super(DynamicSelfAttention, self).__init__(num_attention_heads, input_size, hidden_size)
 
-    def forward(self,
-                query,
-                key=None,
-                value=None,
-                identity=None,
-                query_pos=True,
-                key_pos=True,
-                attn_mask=None,
-                key_padding_mask=None,
-                **kwargs):
-        # 判断是否为自注意力
-        if key is None:
-            key = query
-        if value is None:
-            value = key
-        # 残差结构
-        if identity is None:
-            identity = query
-        # 位置编码
-        query_xyz = query[:, :, :3]  # 选取坐标
-        key_xyz = key[:, :, :3]
-        query_posencode = self.pos_encoding(query_xyz)
-        key_posencode = self.pos_encoding(key_xyz)
-        # key和query使用同一个位置编码
-        # if key_pos is None:
-        #     if query_pos is not None:
-        #         # use query_pos if key_pos is not available
-        #         if query_pos.shape == key.shape:
-        #             key_pos = query_pos
-        #         else:
-        #             warnings.warn(f'position encoding of key is'
-        #                           f'missing in {self.__class__.__name__}.')
-        # key和query使用各自位置编码
-        if query_pos:
-            if self.batch_first:
-                query = query + query_posencode.transpose(1,2) # 特征向量+位置编码
-            else:
-                query = query + query_posencode
-        if key_pos:
-            if self.batch_first:
-                key = key + key_posencode.transpose(1,2)
-            else:
-                key = key + key_posencode
-        # 交换bs和number位置
-        if self.batch_first:
-            query = query.transpose(0, 1)
-            key = key.transpose(0, 1)
-            value = value.transpose(0, 1)
-        # 放入attention块中进行计算
-        out = self.attn(
-            query=query,
-            key=key,
-            value=value,
-            attn_mask=attn_mask,
-            key_padding_mask=key_padding_mask)[0]  # 列表第一个位置是features，第二个位置是weights
-        # 恢复bs和number位置
-        if self.batch_first:
-            out = out.transpose(0, 1)
+    def transpose_for_scores(self, x):
+        """
 
-        attn_out = identity + self.dropout_layer(self.proj_drop(out))  # 残差结构
+        将KQV拆分为多个头
+        input:mixed_query_layer[batch,n,all_head_size][1,4030,64]
+        output:query_layer[batch,num_attention_heads,n,attention_head_size][1,4,4030,16]
 
-        return attn_out
+        """
+        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
+        x = x.view(*new_x_shape)
+        return x.permute(0, 2, 1, 3)
 
+    def forward(self, input_tensor):
+        # input_tensor:[4030,10]
+        # 将输入增加一个维度
+        input_tensor = input_tensor.unsqueeze(0)  # [1,98,10]
+        # 将输入*权重矩阵得到 Q K V
+        mixed_query_layer = self.query(input_tensor.transpose(1, 2)).transpose(1, 2)  # [1,98,64]
+        mixed_key_layer = self.key(input_tensor.transpose(1, 2)).transpose(1, 2)  # [1,98,64]
+        mixed_value_layer = self.value(input_tensor.transpose(1, 2)).transpose(1, 2)  # [1,98,64]
 
+        # 将K Q V拆分为多头
+        query_layer = self.transpose_for_scores(mixed_query_layer)  # [1,4,98,16]
+        key_layer = self.transpose_for_scores(mixed_key_layer)  # [1,4,98,16]
+        value_layer = self.transpose_for_scores(mixed_value_layer)  # [1,4,98,16]
+
+        # Take the dot product between "query" and "key" to get the raw attention scores.
+        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))  # [1,4,98,98]
+        # 除以向量维度的开方，防止注意力分数随维度增大而增大
+        attention_scores = attention_scores / (1e-9 + math.sqrt(self.attention_head_size))  # [1,4,98,98]
+
+        # Normalize the attention_scores to probabilities.注意力矩阵归一化得到注意力分数
+        attention_probs = nn.Softmax(dim=-1)(attention_scores)  # [1,4,98,98]
+
+        # 注意力分数矩阵*V
+        context_layer = torch.matmul(attention_probs, value_layer)  # [1,4,98,16]
+        # contiguous()是将tensor的内存变成连续的，为后面的view()做准备
+        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()  # [1,98,4,16]
+        # 将各头的结果拼接起来，减少一个维度
+        new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
+        context_layer = context_layer.view(*new_context_layer_shape)  # [1,98,64]
+
+        # mlp
+        hidden_states = self.relu(
+            self.bn1d(self.mlp((context_layer + mixed_value_layer).transpose(1, 2))).transpose(1, 2))  # [1,98,64]
+
+        return hidden_states.squeeze(0)  # [4030,64]
