@@ -11,9 +11,11 @@ from .utils import PFNLayer, get_paddings_indicator, PFNLayer_nomax
 from mmcv.cnn.bricks.transformer import (build_attention, build_positional_encoding,
                                          build_feedforward_network)
 from mmdet3d.models.utils.mlp import MLP
+import math
+from mmcv.ops import Voxelization
 
 @VOXEL_ENCODERS.register_module()
-class PillarFeatureNet(nn.Module):
+class PillarFeatureNet(BaseModule):
     """Pillar Feature Net.
 
     The network prepares the pillar features and performs forward pass
@@ -50,8 +52,9 @@ class PillarFeatureNet(nn.Module):
                  point_cloud_range=(0, -40, -3, 70.4, 40, 1),
                  norm_cfg=dict(type='BN1d', eps=1e-3, momentum=0.01),
                  mode='max',
-                 legacy=True):
-        super(PillarFeatureNet, self).__init__()
+                 legacy=True,
+                 init_cfg=None):
+        super(PillarFeatureNet, self).__init__(init_cfg)
         assert len(feat_channels) > 0  # feat_channels=[64] from pp
         self.legacy = legacy
         if with_cluster_center:
@@ -210,18 +213,20 @@ class DynamicPillarFeatureNet(PillarFeatureNet):
                  point_cloud_range=(0, -40, -3, 70.4, 40, 1),
                  norm_cfg=dict(type='BN1d', eps=1e-3, momentum=0.01),
                  mode='max',
-                 legacy=True):
+                 legacy=True,
+                 init_cfg=None):
         super(DynamicPillarFeatureNet, self).__init__(
             in_channels,
             feat_channels,
             with_distance,
-            with_cluster_center=with_cluster_center,
-            with_voxel_center=with_voxel_center,
-            voxel_size=voxel_size,
-            point_cloud_range=point_cloud_range,
-            norm_cfg=norm_cfg,
-            mode=mode,
-            legacy=legacy)
+            with_cluster_center,
+            with_voxel_center,
+            voxel_size,
+            point_cloud_range,
+            norm_cfg,
+            mode,
+            legacy,
+            init_cfg)
         self.fp16_enabled = False
         feat_channels = [self.in_channels] + list(feat_channels)  # [10, 64]
 
@@ -245,6 +250,10 @@ class DynamicPillarFeatureNet(PillarFeatureNet):
         self.pfn_scatter = DynamicScatter(voxel_size, point_cloud_range, reduce='max')
         # DynamicScatter(voxel_size=[0.16, 0.16, 4], point_cloud_range=[0, -39.68, -3, 69.12, 39.68, 1], average_points=True)
         self.cluster_scatter = DynamicScatter(voxel_size, point_cloud_range, reduce='mean')
+
+        # 初始化
+        if init_cfg is None:
+            self.init_cfg = dict(type='Kaiming', layer='Linear')
 
     def map_voxel_center_to_point(self, pts_coors, voxel_mean, voxel_coors):
         """Map the centers of voxels to its corresponding points.
@@ -345,15 +354,15 @@ class DynamicPillarFeatureNet(PillarFeatureNet):
 
 
 @VOXEL_ENCODERS.register_module()
-class AttnPFN(BaseModule):
+class AttnPFN(nn.Module):
     def __init__(self,
                  in_channels=4,
                  feat_channels=(64,),
                  with_distance=False,
                  with_cluster_center=True,
                  with_voxel_center=True,
-                 voxel_size=(0.2, 0.2, 4),
-                 point_cloud_range=(0, -40, -3, 70.4, 40, 1),
+                 voxel_size=(0.16, 0.16, 4),
+                 point_cloud_range=(0, -39.68, -3, 69.12, 39.68, 1),
                  norm_cfg=dict(type='BN1d', eps=1e-3, momentum=0.01),
                  mode='max',
                  legacy=True,
@@ -362,9 +371,9 @@ class AttnPFN(BaseModule):
                      num_attention_heads=4,
                      input_size=10,
                      hidden_size=64),
-                 # mlp
-                 mlp_in_channel=64,
-                 mlp_conv_channels=(64,)
+                 # # mlp
+                 # mlp_in_channel=64,
+                 # mlp_conv_channels=(64,)
                  ):
 
         super(AttnPFN, self).__init__()
@@ -399,8 +408,8 @@ class AttnPFN(BaseModule):
                     last_layer=last_layer,  # True
                     mode=mode))  # max
         self.pfn_layers = nn.ModuleList(pfn_layers)  # fpn层加入模块中
-        # MLP
-        self.mlp = MLP(in_channel=mlp_in_channel, conv_channels=mlp_conv_channels)
+        # # MLP
+        # self.mlp = MLP(in_channel=mlp_in_channel, conv_channels=mlp_conv_channels)
         # multihead_attention
         self.multihead_attention = build_attention(multihead_attention)
 
@@ -501,7 +510,7 @@ class AttnPFN(BaseModule):
 
         # 总特征
         f = ((fa + fm) / 2)
-        f = self.mlp(f.transpose(1, 2)).transpose(1, 2)
+        # f = self.mlp(f.transpose(1, 2)).transpose(1, 2)
 
         return f.squeeze(1)  # (98,64)
 
@@ -514,23 +523,31 @@ class DynamicAttnPFN(DynamicPillarFeatureNet):
                  with_distance=False,
                  with_cluster_center=True,
                  with_voxel_center=True,
-                 voxel_size=(0.2, 0.2, 4),
-                 point_cloud_range=(0, -40, -3, 70.4, 40, 1),
+                 voxel_size=[0.16, 0.16, 4],
+                 point_cloud_range=[0, -39.68, -3, 69.12, 39.68, 1],
                  norm_cfg=dict(type='BN1d', eps=1e-3, momentum=0.01),
                  mode='max',
                  legacy=True,
                  multihead_attention=dict(
-                     type='SelfAttention',
+                     type='DynamicSelfAttention',
                      num_attention_heads=4,
                      input_size=10,
                      hidden_size=64),
-                 mlp_in_channel=10,
-                 mlp_conv_channels=[64]
+                 mlp_in_channel=64,
+                 mlp_conv_channels=[64,],
                  ):
-        super(DynamicAttnPFN, self).__init__()
+        super(DynamicAttnPFN, self).__init__(in_channels,
+                                             feat_channels,
+                                             with_distance,
+                                             with_cluster_center,
+                                             with_voxel_center,
+                                             voxel_size,
+                                             point_cloud_range,
+                                             norm_cfg,
+                                             mode,
+                                             legacy)
         #mlp
-        self.mlp_in_channel = mlp_in_channel
-        self.mlp_conv_channels = mlp_conv_channels
+        self.mlp = MLP(in_channel=mlp_in_channel, conv_channels=mlp_conv_channels)
         # multihead_attention
         self.multihead_attention = build_attention(multihead_attention)
         # attention得到的注意力分数进行分配，并取sum
@@ -572,7 +589,39 @@ class DynamicAttnPFN(DynamicPillarFeatureNet):
         # Combine together feature decorations
         features = torch.cat(features_ls, dim=-1)  # (4030,10) include:点特征(原始坐标)，点与聚类中心距离，点和体素中心距离
 
-        # ----------------------------------------------step2 pfn-----------------------------------------------
+        # #
+        # batch_size = coors[-1, 0] + 1
+        # coors1 = coors
+        # coors2 = coors
+        # f_sum = []
+        # for i in range(batch_size):
+        #     inds = torch.where(coors[:, 0] == i)  # 该batch的索引[2010,]
+        #     batch_features = features[inds]  # [2010,10]
+        #     coor = coors[inds]  # [2010,4]
+        #     # 取相同体素坐标的索引
+        #     element1 = torch.unique(coor[:, 2])  # y [7,]
+        #     element2 = torch.unique(coor[:, 3])  # x [7,]
+        #
+        #     for j in element1:
+        #         indy = torch.where(coor[:, 2] == j)  # 找出相同y
+        #         for k in element2:
+        #             indx = torch.where(coor[:, 3] == k)  # 找出相同x
+        #
+        #             coory = coor[indy]
+        #             coorx = coor[indx]
+        #             featuresx = batch_features[indx]
+        #
+        #             ind = torch.where(coorx[:, 2] == j)
+        #             feature = featuresx[ind]
+        #             coor_f = coorx[ind]
+        #
+        #             if coor_f.numel()  == 0 or feature.numel() == 0:
+        #                 continue
+        #
+        #             if feature.size() == (1, 10):
+        #                 continue
+
+# ----------------------------------------------step2 pfn-----------------------------------------------
         pfn_features = features
         for i, pfn in enumerate(self.pfn_layers):
             # 在全局点云内提取点的特征，得到每个点的全局特征 10->64
@@ -584,16 +633,24 @@ class DynamicAttnPFN(DynamicPillarFeatureNet):
                 feat_per_point = self.map_voxel_center_to_point(
                     coors, voxel_feats, voxel_coors)
                 pfn_features = torch.cat([point_feats, feat_per_point], dim=1)
-        fm = voxel_feats  # (98,64)
+        fm = voxel_feats # (98,64)
+
+        # score = self.multihead_attention(feature)  # [2010,64]
+        # fa = (point_feats * score) / torch.sum(score, dim=1, keepdim=True)  # (2010,64)
+        # fa = self.attention_scatter(fa, coor_f)[0]
+        # f = (fm + fa) / 2  # (1,49,64)
+        # f_sum.append(f)
+        # f = torch.cat(f_sum, dim=0)  # [98,64]
 
         # ------------------------------------------step3 multihead_attention-------------------------------------
-        score = self.multihead_attention(features)  # [4030,64]
-        fa = point_feats * score  # (4030,64)
-        fa = self.attention_scatter(fa, coors)[0]  # (98,64)
+        features = self.attention_scatter(features, coors)[0]  # (98,10)
+        score = self.multihead_attention(features)  # [98,10]->[98,64]
+        fa = voxel_feats * score  # (98,64)
         # 总特征
-        f = (fm + fa)/2
+        f = (fm.unsqueeze(0) + fa.unsqueeze(0))/2  # (1,98,64)
+        f = self.mlp(f.transpose(1,2)).transpose(1,2)  # (1,98,64)
 
-        return f, voxel_coors  # (98,64) (98,4)
+        return f.squeeze(0), mean_coors  # (98,64) (98,4)
 
 
 
