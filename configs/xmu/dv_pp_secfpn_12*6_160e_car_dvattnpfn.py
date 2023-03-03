@@ -10,34 +10,33 @@ model = dict(
     voxel_encoder=dict(
         type='DynamicAttnPFN',
         in_channels=4,
-        feat_channels=[64],
+        feat_channels=(64,),
         with_distance=False,
+        with_cluster_center=True,
+        with_voxel_center=True,
         voxel_size=voxel_size,
         point_cloud_range=point_cloud_range,
+        norm_cfg=dict(type='BN1d', eps=1e-3, momentum=0.01),
+        mode='max',  # second源码中用avg pooling
+        legacy=True,
         multihead_attention=dict(
-            type='MultiheadAttention',
-            embed_dims=64,
-            num_heads=1,
-            attn_drop=0.1,
-            proj_drop=0.,
-            dropout_layer=dict(type='Dropout', drop_prob=0.1),
-            init_cfg=None,
-            batch_first=True),
-        pos_encoding=dict(
-            type='ConvBNPositionalEncoding',
-            input_channel=64,
-            num_pos_feats=64),
-        mlp_in_channel=10,
-        mlp_conv_channels=[64]
+            type='DynamicSelfAttention',
+            num_attention_heads=4,
+            input_size=10,
+            hidden_size=64),
+        # mlp
+        mlp_in_channel=64,
+        mlp_conv_channels=(64,)
     ),
     middle_encoder=dict(
         type='PointPillarsScatter', in_channels=64, output_shape=[496, 432]),
     backbone=dict(
-        type='SECOND',
-        in_channels=64,
-        layer_nums=[3, 5, 5],
-        layer_strides=[2, 2, 2],
-        out_channels=[64, 128, 256]),
+        type='RCSECOND',
+        in_channels=[64, 128, 256],
+        out_channels=[128, 256, 512],
+        fpn_channels=[64, 128, 256],
+        layer_nums=[5, 5, 1],
+        layer_strides=[2, 2, 2]),
     neck=dict(
         type='SECONDFPN',
         in_channels=[64, 128, 256],
@@ -171,7 +170,7 @@ eval_pipeline = [
     dict(type='Collect3D', keys=['points'])
 ]
 data = dict(
-    samples_per_gpu=1,
+    samples_per_gpu=2,
     workers_per_gpu=1,
     train=dict(
         type='RepeatDataset',
@@ -191,7 +190,7 @@ data = dict(
     val=dict(
         type=dataset_type,
         data_root=data_root,
-        samples_per_gpu=1,
+        samples_per_gpu=2,
         ann_file=data_root+'kitti_infos_val.pkl',
         split='training',
         pts_prefix='velodyne_reduced',
@@ -219,31 +218,19 @@ optimizer = dict(type='AdamW', lr=lr, betas=(0.95, 0.99), weight_decay=0.01)
 optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 lr_config = dict(
     policy='cyclic',
-    target_ratio=(10, 0.0001),
+    target_ratio=(10, 1e-4),
     cyclic_times=1,
     step_ratio_up=0.4)
-# lr_config = dict(
-#     policy='step',
-#     warmup='linear',
-#     warmup_iters=200,
-#     warmup_ratio=0.001,
-#     step=[8, 11])
-# lr_config = dict(
-#     policy='CosineAnnealing',
-#     warmup='linear',
-#     warmup_iters=400,  # 当batch size增大时，应适当减小预热迭代次数
-#     warmup_ratio=1.0 / 10,
-#     min_lr_ratio=1e-5)  # 最小学习率0.00001
 momentum_config = dict(
     policy='cyclic',
-    target_ratio=(0.8947368421052632, 1),
+    target_ratio=(0.85 / 0.95, 1),
     cyclic_times=1,
     step_ratio_up=0.4)
-runner = dict(type='EpochBasedRunner', max_epochs=100)
+runner = dict(type='EpochBasedRunner', max_epochs=80)
 evaluation = dict(interval=1, pipeline=eval_pipeline)
 checkpoint_config = dict(interval=1)
 log_config = dict(
-    interval=10,
+    interval=30,
     hooks=[
         dict(type='TextLoggerHook'),
         # dict(type='WandbLoggerHook', init_kwargs=dict(project='Your-project'))
@@ -254,3 +241,6 @@ work_dir = None
 load_from = None
 resume_from = None
 workflow = [('train', 1)]
+# fp16 = dict(loss_scale=32.)
+# 检查loss异常值
+checkinvalidloss = dict(type='CheckInvalidLossHook', interval=30)  # 每隔多少个iter检查一次

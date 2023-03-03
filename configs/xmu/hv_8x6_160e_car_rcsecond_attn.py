@@ -4,7 +4,7 @@ point_cloud_range = [0, -39.68, -3, 69.12, 39.68, 1]
 model = dict(
     type='VoxelNet',
     voxel_layer=dict(
-        max_num_points=32,  # max_points_per_voxel second=5,voxelnet=35
+        max_num_points=35,  # max_points_per_voxel second=5,voxelnet=35
         point_cloud_range=point_cloud_range,
         voxel_size=voxel_size,
         max_voxels=(16000, 40000)),  # (training, testing) max_voxels  432*496=214272 有许多空体素，用稀疏卷积
@@ -12,22 +12,15 @@ model = dict(
         type='AttnPFN',
         in_channels=4,
         feat_channels=(64,),
-        with_distance=False,
-        with_cluster_center=True,
-        with_voxel_center=True,
-        voxel_size=(0.2, 0.2, 4),
-        point_cloud_range=(0, -40, -3, 70.4, 40, 1),
-        norm_cfg=dict(type='BN1d', eps=1e-3, momentum=0.01),
+        with_distance=True,
+        voxel_size=voxel_size,
+        point_cloud_range=point_cloud_range,
         mode='max',  # second源码中用avg pooling
-        legacy=True,
         multihead_attention=dict(
             type='SelfAttention',
             num_attention_heads=4,
-            input_size=10,
-            hidden_size=64),
-        # mlp
-        mlp_in_channel=64,
-        mlp_conv_channels=(64,)),  # out_channels=64
+            input_size=11,
+            hidden_size=64)),  # out_channels=64
     # output: 伪图像[1,64,496,432]：[pillar,features,y,x] ? 为什么输出将 x,y 互换位置
     middle_encoder=dict(
         type='PointPillarsScatter', in_channels=64, output_shape=[496, 432]),
@@ -36,7 +29,7 @@ model = dict(
         in_channels=[64, 128, 256],
         out_channels=[128, 256, 512],
         fpn_channels=[64, 128, 256],
-        layer_nums=[5, 5, 1],
+        layer_nums=[8, 5, 2],
         layer_strides=[2, 2, 2],
         norm_cfg=dict(type='BN', eps=1e-3, momentum=0.01),
         conv_cfg=dict(type='Conv2d', bias=False),
@@ -176,7 +169,7 @@ eval_pipeline = [
 
 data = dict(
     samples_per_gpu=8,
-    workers_per_gpu=4,
+    workers_per_gpu=6,
     train=dict(
         type='RepeatDataset',
         times=2,
@@ -242,10 +235,10 @@ checkpoint_config = dict(interval=4)
 evaluation = dict(interval=4, pipeline=eval_pipeline)
 # yapf:disable
 log_config = dict(
-    interval=50,
+    interval=70,
     hooks=[
         dict(type='TextLoggerHook'),
-        dict(type='WandbLoggerHook', init_kwargs=dict(project='Your-project'))
+        # dict(type='WandbLoggerHook', init_kwargs=dict(project='Your-project'))
     ])
 # yapf:enable
 # runtime settings
@@ -260,4 +253,4 @@ opencv_num_threads = 0
 mp_start_method = 'fork'
 # fp16 = dict(loss_scale=32.)
 # 检查loss异常值
-checkinvalidloss = dict(type='CheckInvalidLossHook', interval=50)  # 每隔多少个iter检查一次
+checkinvalidloss = dict(type='CheckInvalidLossHook', interval=70)  # 每隔多少个iter检查一次
