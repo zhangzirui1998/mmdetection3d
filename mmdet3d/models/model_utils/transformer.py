@@ -180,6 +180,8 @@ class SelfAttention(BaseModule):
         if init_cfg is None:
             self.init_cfg = dict(type='Kaiming', layer='Conv1d')
 
+        self.fp16_enabled = False
+
     def transpose_for_scores(self, x):
         """
 
@@ -192,6 +194,7 @@ class SelfAttention(BaseModule):
         x = x.view(*new_x_shape)
         return x.permute(0, 2, 1, 3)
 
+    @auto_fp16(apply_to=('input_tensor',), out_fp32=True)
     def forward(self, input_tensor):
         # 将输入*权重矩阵得到 Q K V
         mixed_query_layer = self.query(input_tensor.transpose(1, 2)).transpose(1, 2)
