@@ -147,6 +147,7 @@ class RCSECOND(BaseModule):
         else:
             self.init_cfg = dict(type='Kaiming', layer='Conv2d')  # 用凯明的初始化配置
 
+    @auto_fp16(apply_to=('x',))
     def forward(self, x):
         rep_outs = []
         outs = []
