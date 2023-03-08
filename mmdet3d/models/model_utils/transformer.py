@@ -173,7 +173,7 @@ class SelfAttention(BaseModule):
 
         # 做完self-attention 做一个前馈全连接 LayerNorm 输出
         self.mlp = nn.Conv1d(hidden_size, hidden_size, kernel_size=1, bias=False)
-        self.bn1d = nn.BatchNorm1d(hidden_size)
+        self.bn1d = nn.BatchNorm1d(hidden_size, eps=1e-3, momentum=0.01)
         self.relu = nn.LeakyReLU(inplace=True)
 
         #初始化
