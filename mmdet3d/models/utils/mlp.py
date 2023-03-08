@@ -27,7 +27,7 @@ class MLP(BaseModule):
                  in_channel=18,
                  conv_channels=(256, 256),
                  conv_cfg=dict(type='Conv1d'),
-                 norm_cfg=dict(type='BN1d'),
+                 norm_cfg=dict(type='BN1d', eps=1e-3, momentum=0.01),
                  act_cfg=dict(type='LeakyReLU'),
                  bias=False,
                  init_cfg=None):
