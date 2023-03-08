@@ -371,9 +371,9 @@ class AttnPFN(nn.Module):
                      num_attention_heads=4,
                      input_size=10,
                      hidden_size=64),
-                 # # mlp
-                 # mlp_in_channel=64,
-                 # mlp_conv_channels=(64,)
+                 # mlp
+                 mlp_in_channel=64,
+                 mlp_conv_channels=(64,)
                  ):
 
         super(AttnPFN, self).__init__()
@@ -408,8 +408,8 @@ class AttnPFN(nn.Module):
                     last_layer=last_layer,  # True
                     mode=mode))  # max
         self.pfn_layers = nn.ModuleList(pfn_layers)  # fpn层加入模块中
-        # # MLP
-        # self.mlp = MLP(in_channel=mlp_in_channel, conv_channels=mlp_conv_channels)
+        # MLP
+        self.mlp = MLP(in_channel=mlp_in_channel, conv_channels=mlp_conv_channels)
         # multihead_attention
         self.multihead_attention = build_attention(multihead_attention)
 
@@ -499,7 +499,7 @@ class AttnPFN(nn.Module):
         for pfn in self.pfn_layers:
             # 将特征放入FPN中提取并maxpooling，channels: in10 out64
             pfn_features = pfn(pfn_features, num_points)  # [97297,20,64]
-        fm = torch.max(pfn_features, dim=1, keepdim=True)[0]
+        fm = torch.max(pfn_features, dim=1, keepdim=True)[0]  # (97297,1,64)
 
         # ---------------------------------------step3 multihead_attention-------------------------------------
         # multi-self-attention
@@ -509,10 +509,10 @@ class AttnPFN(nn.Module):
         fa = torch.sum(fa, dim=1, keepdim=True)  # (97297,1,64)
 
         # 总特征
-        f = ((fa + fm) / 2)
-        # f = self.mlp(f.transpose(1, 2)).transpose(1, 2)
+        f = ((fa + fm) / 2)  # (97297,1,64)
+        f = self.mlp(f.transpose(1, 2)).transpose(1, 2)  # (97297,1,64)
 
-        return f.squeeze(1)  # (98,64)
+        return f.squeeze(1)  # (97297,64)
 
 
 @VOXEL_ENCODERS.register_module()

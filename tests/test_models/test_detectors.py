@@ -100,7 +100,7 @@ def test_voxel_net():
         pytest.skip('test requires GPU and torch+cuda')
     _setup_seed(0)
     voxel_net_cfg = _get_detector_cfg(
-        'xmu/hv_pp_secfpn_6x6_200e_car_attnpfn.py')
+        'xmu/fp16_12x7_160e_car_rcsecond1051_attn1*64.py')
 
     self = build_detector(voxel_net_cfg).cuda()
     points_0 = torch.rand([2010, 4], device='cuda')
